@@ -27,6 +27,7 @@ create table if not exists ck_counts (
   item_id text not null references ck_items(id) on delete cascade,
   count numeric not null default 0,
   created_at timestamptz default now(),
+  updated_at timestamptz default now(),
   unique(session_id, item_id)
 );
 
@@ -49,12 +50,23 @@ create table if not exists ck_order_items (
   unique(order_id, item_id)
 );
 
+-- Category / subcategory / item order within groups (Count tab + Setup reorder UI)
+create table if not exists ck_layout (
+  id text primary key,
+  layout jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+insert into ck_layout (id, layout) values ('global', '{}'::jsonb)
+  on conflict (id) do nothing;
+
 -- Enable Row Level Security (open for single-user internal tool)
 alter table ck_items enable row level security;
 alter table ck_sessions enable row level security;
 alter table ck_counts enable row level security;
 alter table ck_orders enable row level security;
 alter table ck_order_items enable row level security;
+alter table ck_layout enable row level security;
 
 -- Allow all operations via anon key
 do $$ begin
@@ -73,4 +85,11 @@ do $$ begin
   if not exists (select 1 from pg_policies where tablename='ck_order_items' and policyname='allow_all') then
     execute 'create policy allow_all on ck_order_items for all using (true) with check (true)';
   end if;
+  if not exists (select 1 from pg_policies where tablename='ck_layout' and policyname='allow_all') then
+    execute 'create policy allow_all on ck_layout for all using (true) with check (true)';
+  end if;
 end $$;
+
+-- Migration: add updated_at to ck_counts (safe to re-run) for multi-device sync detection
+alter table ck_counts add column if not exists updated_at timestamptz default now();
+update ck_counts set updated_at = coalesce(updated_at, created_at) where updated_at is null;

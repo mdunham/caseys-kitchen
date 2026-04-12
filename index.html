@@ -153,7 +153,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* Empty state */
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:50px 20px;color:#9ca3af;text-align:center;font-size:13px}
 /* Sticky footer */
-.sticky-footer{background:#fff;border-top:1px solid #eee;padding:12px 0 0;display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:12px}
+.sticky-footer{background:transparent;border-top:none;padding:12px 0 0;margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.sticky-footer-row{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap}
+.sticky-footer-row.between{justify-content:space-between;align-items:center}
+.sticky-footer-copy{font-size:10px;color:#9ca3af;text-align:center;line-height:1.45;padding-top:2px}
+.sticky-footer-copy a{color:#9ca3af;text-decoration:underline}
+/* PIN gate & stale-sync modal */
+.pin-overlay,.modal-overlay{position:fixed;inset:0;background:rgba(255,255,255,.97);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:250;padding:24px;text-align:center}
+.modal-overlay{z-index:240;background:rgba(17,17,17,.45);backdrop-filter:blur(2px)}
+.modal-box{background:#fff;border-radius:14px;padding:20px 22px;max-width:340px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.12);border:1px solid #e5e7eb}
+.modal-title{font-size:17px;font-weight:700;margin-bottom:8px;color:#111}
+.modal-text{font-size:13px;color:#6b7280;line-height:1.45;margin-bottom:16px}
+.modal-actions{display:flex;flex-direction:column;gap:8px}
+.pin-box{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px 22px;max-width:320px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.06)}
+.pin-title{font-size:18px;font-weight:700;margin-bottom:6px}
+.pin-sub{font-size:13px;color:#6b7280;margin-bottom:16px}
+.pin-input{width:100%;padding:12px 14px;font-size:20px;letter-spacing:.25em;text-align:center;font-family:'SF Mono',monospace;border:2px solid #e5e7eb;border-radius:10px;outline:none}
+.pin-input:focus{border-color:#e85d04}
+.pin-err{font-size:13px;color:#991b1b;margin-top:10px;min-height:1.2em}
+.pin-actions{margin-top:16px}
 /* Scrollable SQL block */
 .sql-block{background:#1e1e2e;color:#cdd6f4;font-size:11px;font-family:'SF Mono',monospace;padding:12px;border-radius:8px;overflow-x:auto;white-space:pre;line-height:1.5;margin:8px 0}
 /* Install banner */
@@ -165,6 +183,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head>
 <body>
 <div class="app" id="app">
+  <div id="pin-overlay" class="pin-overlay" aria-modal="true" role="dialog" aria-labelledby="pin-title">
+    <div class="pin-box">
+      <div class="pin-title" id="pin-title">Store access</div>
+      <div class="pin-sub">Enter the 4-digit store PIN to continue.</div>
+      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="PIN" onkeydown="if(event.key==='Enter')submitStorePin()">
+      <div id="pin-err" class="pin-err" role="alert"></div>
+      <div class="pin-actions">
+        <button type="button" class="btn btn-primary" style="width:100%" onclick="submitStorePin()">Unlock</button>
+      </div>
+    </div>
+  </div>
+  <div id="stale-sync-overlay" class="modal-overlay" aria-modal="true" role="dialog" aria-labelledby="stale-title" style="display:none">
+    <div class="modal-box">
+      <div class="modal-title" id="stale-title">Data may be outdated</div>
+      <div class="modal-text">The database was updated from another session or device. Refresh to load the latest items, counts, and orders, or stay on your current screen if you are still working.</div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" style="width:100%" onclick="staleSyncRefresh()">Refresh data now</button>
+        <button type="button" class="btn btn-secondary" style="width:100%" onclick="staleSyncDismiss()">Cancel — keep working</button>
+      </div>
+    </div>
+  </div>
   <div id="loading-overlay" class="loading-overlay">
     <div class="spinner"></div>
     <span id="loading-msg">Connecting to database…</span>
@@ -211,6 +250,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 const SB_URL = 'https://lzhawmvgkylumwcseltb.supabase.co';
 const SB_KEY = 'sb_publishable_lVS5Yjtzu_t6c9LKDYTuLA_vGWL_gcC';
 
+/** Store PIN (Casey's store #) — session only, not persisted across browser restarts */
+const STORE_PIN = '1406';
+const SS_PIN_KEY = 'ck2_store1406';
+
 const SEED_ITEMS = [
   {id:'s1',name:'Hot Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1001',sort_order:1},
   {id:'s2',name:'Mild Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1002',sort_order:2},
@@ -242,6 +285,10 @@ const S = {
   testResults: null,
   countView: 'list',
   walkIndex: 0,
+  lastRemoteFingerprint: null,
+  staleDialogOpen: false,
+  stalePollId: null,
+  staleCheckInFlight: false,
 };
 
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
@@ -310,8 +357,9 @@ const db = {
   async saveSession(sessionId, countedAt, counts){
     const {error:se} = await sb.from('ck_sessions').upsert({id:sessionId,counted_at:countedAt},{onConflict:'id'});
     if(se) throw se;
+    const ts = new Date().toISOString();
     const rows = Object.entries(counts).map(([item_id,count])=>({
-      session_id:sessionId, item_id, count:parseFloat(count)||0
+      session_id:sessionId, item_id, count:parseFloat(count)||0, updated_at: ts
     }));
     if(rows.length){
       const {error:ce} = await sb.from('ck_counts').upsert(rows,{onConflict:'session_id,item_id'});
@@ -320,8 +368,9 @@ const db = {
   },
 
   async updateSessionCounts(sessionId, counts){
+    const ts = new Date().toISOString();
     const rows = Object.entries(counts).map(([item_id,count])=>({
-      session_id:sessionId, item_id, count:parseFloat(count)||0
+      session_id:sessionId, item_id, count:parseFloat(count)||0, updated_at: ts
     }));
     const {error} = await sb.from('ck_counts').upsert(rows,{onConflict:'session_id,item_id'});
     if(error) throw error;
@@ -351,6 +400,23 @@ const db = {
       const {error} = await sb.from('ck_order_items').update({received}).eq('order_id',orderId).eq('item_id',item_id);
       if(error) throw error;
     }
+  },
+
+  async loadLayoutRow(){
+    const {data,error} = await sb.from('ck_layout').select('layout,updated_at').eq('id','global').maybeSingle();
+    if(error) throw error;
+    return data;
+  },
+
+  async upsertLayout(L){
+    const layout={catOrder:L.catOrder||[],subOrder:L.subOrder||{},groupItemOrder:L.groupItemOrder||{}};
+    const {data,error} = await sb.from('ck_layout').upsert({
+      id:'global',
+      layout,
+      updated_at:new Date().toISOString()
+    },{onConflict:'id'}).select('updated_at').maybeSingle();
+    if(error) throw error;
+    return data&&data.updated_at ? new Date(data.updated_at).getTime() : null;
   }
 };
 
@@ -364,6 +430,118 @@ function updateSyncDot(){
   if(S.syncing){ d.className='sync-dot spin'; d.title='Syncing…'; }
   else if(S.syncError){ d.className='sync-dot err'; d.title='Sync error: '+S.syncError; }
   else { d.className='sync-dot ok'; d.title='Synced'; }
+}
+
+function isStoreAuthed(){
+  try{ return sessionStorage.getItem(SS_PIN_KEY)==='1'; }catch{ return false; }
+}
+
+/** Compact snapshot of remote DB for stale detection (another tab/device changed data). */
+async function fetchRemoteFingerprint(){
+  if(!sb) return null;
+  try{
+    const ic = await sb.from('ck_items').select('*',{count:'exact',head:true});
+    const iu = await sb.from('ck_items').select('updated_at').order('updated_at',{ascending:false}).limit(1).maybeSingle();
+    const sc = await sb.from('ck_sessions').select('*',{count:'exact',head:true});
+    const su = await sb.from('ck_sessions').select('counted_at').order('counted_at',{ascending:false}).limit(1).maybeSingle();
+    const cc = await sb.from('ck_counts').select('*',{count:'exact',head:true});
+    const cu = await sb.from('ck_counts').select('updated_at,created_at').order('updated_at',{ascending:false}).limit(1).maybeSingle();
+    const oc = await sb.from('ck_orders').select('*',{count:'exact',head:true});
+    const ou = await sb.from('ck_orders').select('ordered_at,received_at').order('ordered_at',{ascending:false}).limit(1).maybeSingle();
+    const orx = await sb.from('ck_orders').select('received_at').not('received_at','is',null).order('received_at',{ascending:false}).limit(1).maybeSingle();
+    const oic = await sb.from('ck_order_items').select('*',{count:'exact',head:true});
+    const lay = await sb.from('ck_layout').select('updated_at').eq('id','global').maybeSingle();
+    const packs = [ic,iu,sc,su,cc,cu,oc,ou,orx,oic];
+    const bad = packs.map(r=>r.error).filter(Boolean);
+    if(bad.length) throw bad[0];
+    const cRow = cu.data;
+    const cSig = (cRow&&(cRow.updated_at||cRow.created_at))||'';
+    const layu = lay.error ? '' : (lay.data?.updated_at||'');
+    return JSON.stringify({
+      ic:ic.count??0, iu:iu.data?.updated_at||'',
+      sc:sc.count??0, su:su.data?.counted_at||'',
+      cc:cc.count??0, cu:cSig,
+      oc:oc.count??0, oo:ou.data?.ordered_at||'', oa:ou.data?.received_at||'',
+      ormax:orx.data?.received_at||'',
+      oic:oic.count??0,
+      layu
+    });
+  }catch(e){
+    console.warn('fetchRemoteFingerprint',e);
+    return null;
+  }
+}
+
+async function noteServerSynced(){
+  if(!sb || !S.dbReady) return;
+  const fp = await fetchRemoteFingerprint();
+  if(fp!==null) S.lastRemoteFingerprint=fp;
+}
+
+function startStaleWatcher(){
+  if(S.stalePollId){ clearInterval(S.stalePollId); S.stalePollId=null; }
+  if(!sb || !S.dbReady) return;
+  S.stalePollId=setInterval(()=>{ void checkRemoteStale(); },35000);
+}
+
+async function checkRemoteStale(){
+  if(!sb || !S.dbReady || S.staleDialogOpen || S.syncing || S.staleCheckInFlight) return;
+  S.staleCheckInFlight=true;
+  try{
+    const remote = await fetchRemoteFingerprint();
+    if(remote===null || S.lastRemoteFingerprint===null) return;
+    if(remote!==S.lastRemoteFingerprint) openStaleSyncDialog();
+  }finally{
+    S.staleCheckInFlight=false;
+  }
+}
+
+function openStaleSyncDialog(){
+  if(S.staleDialogOpen) return;
+  S.staleDialogOpen=true;
+  const el=document.getElementById('stale-sync-overlay');
+  if(el) el.style.display='flex';
+}
+
+function hideStaleSyncOverlay(){
+  const el=document.getElementById('stale-sync-overlay');
+  if(el) el.style.display='none';
+  S.staleDialogOpen=false;
+}
+
+async function staleSyncRefresh(){
+  hideStaleSyncOverlay();
+  document.getElementById('loading-overlay').style.display='flex';
+  document.getElementById('loading-msg').textContent='Refreshing data…';
+  try{
+    await loadFromDB();
+  }finally{
+    document.getElementById('loading-overlay').style.display='none';
+  }
+  render();
+}
+
+async function staleSyncDismiss(){
+  hideStaleSyncOverlay();
+  const fp = await fetchRemoteFingerprint();
+  if(fp!==null) S.lastRemoteFingerprint=fp;
+}
+
+async function submitStorePin(){
+  const input=document.getElementById('pin-input');
+  const errEl=document.getElementById('pin-err');
+  const raw=(input&&input.value)||'';
+  const v=raw.replace(/\D/g,'');
+  if(v!==STORE_PIN){
+    if(errEl) errEl.textContent='Incorrect PIN.';
+    return;
+  }
+  if(errEl) errEl.textContent='';
+  try{ sessionStorage.setItem(SS_PIN_KEY,'1'); }catch{}
+  document.getElementById('pin-overlay').style.display='none';
+  document.getElementById('loading-overlay').style.display='flex';
+  document.getElementById('loading-msg').textContent='Connecting to database…';
+  await finishBoot();
 }
 
 // ─── SCHEDULE HELPERS ───────────────────────────────────────────────────────
@@ -399,6 +577,11 @@ function fmtDateTime(iso){ return new Date(iso).toLocaleDateString('en-US',{week
 
 function escapeHtml(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function stickyFooterCopyright(){
+  const y=new Date().getFullYear();
+  return `<div class="sticky-footer-copy">© ${y} Matthew Dunham · <a href="mailto:send_me_letters@hotmail.com">send_me_letters@hotmail.com</a></div>`;
 }
 
 /** Safe for double-quoted onclick="fn(...)" — avoids nested " breaking the attribute */
@@ -449,7 +632,89 @@ function loadLayout(){
   return {catOrder:[],subOrder:{},groupItemOrder:{}};
 }
 
-function saveLayout(L){ ls.set('layout',L); }
+let layoutPushTimer=null;
+function normalizeLayoutObj(v){
+  if(!v||typeof v!=='object') return {catOrder:[],subOrder:{},groupItemOrder:{}};
+  return {catOrder:v.catOrder||[],subOrder:v.subOrder||{},groupItemOrder:v.groupItemOrder||{}};
+}
+function layoutHasCustomOrder(L){
+  const n=normalizeLayoutObj(L);
+  if(Array.isArray(n.catOrder)&&n.catOrder.length) return true;
+  if(n.subOrder&&typeof n.subOrder==='object'&&Object.keys(n.subOrder).length) return true;
+  if(n.groupItemOrder&&typeof n.groupItemOrder==='object'&&Object.keys(n.groupItemOrder).length) return true;
+  return false;
+}
+
+function layoutPushMsGet(){
+  try{ return parseInt(localStorage.getItem('ck2_layoutPushMs')||'0',10)||0; }catch{ return 0; }
+}
+function layoutPushMsSet(ms){
+  try{ localStorage.setItem('ck2_layoutPushMs',String(ms)); }catch{}
+}
+
+async function mergeLayoutFromRemote(){
+  if(!sb||!S.dbReady) return;
+  try{
+    const row=await db.loadLayoutRow();
+    const remote=row&&row.layout;
+    const remoteMs=row&&row.updated_at ? new Date(row.updated_at).getTime() : 0;
+    const local=ls.get('layout');
+    const localHas=local&&layoutHasCustomOrder(local);
+    const remoteHas=remote&&layoutHasCustomOrder(remote);
+    if(remoteHas){
+      if(!localHas){
+        ls.set('layout',normalizeLayoutObj(remote));
+        layoutPushMsSet(remoteMs);
+        return;
+      }
+      const lastPush=layoutPushMsGet();
+      if(remoteMs>=lastPush-2500){
+        ls.set('layout',normalizeLayoutObj(remote));
+        layoutPushMsSet(remoteMs);
+        return;
+      }
+    }
+    if(localHas){
+      const ms=await db.upsertLayout(normalizeLayoutObj(local));
+      if(ms!=null) layoutPushMsSet(ms);
+    }
+  }catch(e){
+    console.warn('mergeLayoutFromRemote',e);
+  }
+}
+
+async function pushLayoutToDb(){
+  if(!sb||!S.dbReady) return;
+  const L=normalizeLayoutObj(loadLayout());
+  try{
+    const ms=await db.upsertLayout(L);
+    if(ms!=null) layoutPushMsSet(ms);
+    await noteServerSynced();
+  }catch(e){
+    console.warn('layout sync',e);
+  }
+}
+
+function scheduleLayoutPush(){
+  if(!sb||!S.dbReady) return;
+  if(layoutPushTimer) clearTimeout(layoutPushTimer);
+  layoutPushTimer=setTimeout(()=>{
+    layoutPushTimer=null;
+    void pushLayoutToDb();
+  },500);
+}
+
+function flushLayoutPushIfPending(){
+  if(!layoutPushTimer) return;
+  clearTimeout(layoutPushTimer);
+  layoutPushTimer=null;
+  void pushLayoutToDb();
+}
+
+function saveLayout(L){
+  ls.set('layout',L);
+  scheduleLayoutPush();
+}
 
 function ensureLayoutFromItems(items){
   const map=discoverGroups(items);
@@ -746,7 +1011,7 @@ function renderCount(){
     groups.forEach(g=>{
       const l1=g.l1;
       const k1=EK1(l1);
-      const open1=S.expanded[k1]!==false;
+      const open1=S.expanded[k1]===true;
       let tot=0, done=0;
       g.subs.forEach(s=>{
         s.items.forEach(i=>{ tot++; if(draft[i.id]!==undefined&&draft[i.id]!=='') done++; });
@@ -761,7 +1026,7 @@ function renderCount(){
         g.subs.forEach(s=>{
           const l2=s.l2;
           const k2=EK2(l1,l2);
-          const open2=S.expanded[k2]!==false;
+          const open2=S.expanded[k2]===true;
           const its=s.items;
           const cc=its.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
           h+=`<div class="card" style="margin-bottom:8px">
@@ -791,11 +1056,14 @@ function renderCount(){
   }
 
   h+=`<div class="sticky-footer">
-    <span style="font-size:12px;color:#9ca3af">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</span>
-    <button class="btn btn-primary" onclick="completeInventory()" ${counted===0?'disabled':''}>
-      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      Save Count
-    </button>
+    <div class="sticky-footer-row between">
+      <span style="font-size:12px;color:#9ca3af">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</span>
+      <button class="btn btn-primary" onclick="completeInventory()" ${counted===0?'disabled':''}>
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Count
+      </button>
+    </div>
+    ${stickyFooterCopyright()}
   </div>`;
   return h;
 }
@@ -844,7 +1112,7 @@ function renderEditSession(sessionId){
   groups.forEach(g=>{
     const l1=g.l1;
     const k1='edit/'+EK1(l1);
-    const open1=S.expanded[k1]!==false;
+    const open1=S.expanded[k1]===true;
     h+=`<div class="l1-block">
       <button type="button" class="l1-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k1)}')))">
         <div class="l1-title">${svgChevron(open1)}<span>${escapeHtml(l1)}</span></div>
@@ -854,7 +1122,7 @@ function renderEditSession(sessionId){
       g.subs.forEach(s=>{
         const l2=s.l2;
         const k2='edit/'+EK2(l1,l2);
-        const open2=S.expanded[k2]!==false;
+        const open2=S.expanded[k2]===true;
         const its=s.items;
         h+=`<div class="card" style="margin-bottom:8px">
           <button type="button" class="card-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k2)}')))">
@@ -882,12 +1150,15 @@ function renderEditSession(sessionId){
     h+='</div>';
   });
   h+=`<div class="sticky-footer">
-    <button class="btn btn-danger btn-sm" onclick="deleteSession('${sessionId}')">Delete</button>
-    <button class="btn btn-secondary btn-sm" onclick="cancelEditSession()">Cancel</button>
-    <button class="btn btn-primary btn-sm" onclick="saveEditSession('${sessionId}')">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      Save Edits
-    </button>
+    <div class="sticky-footer-row">
+      <button class="btn btn-danger btn-sm" onclick="deleteSession('${sessionId}')">Delete</button>
+      <button class="btn btn-secondary btn-sm" onclick="cancelEditSession()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveEditSession('${sessionId}')">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        Save Edits
+      </button>
+    </div>
+    ${stickyFooterCopyright()}
   </div>`;
   return h;
 }
@@ -948,14 +1219,17 @@ function renderOrder(){
   });
 
   h+=`<div class="sticky-footer">
-    <button class="btn btn-secondary" onclick="window.print()">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-      Print
-    </button>
-    <button class="btn btn-primary" onclick="logOrder()">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      Log Order Placed
-    </button>
+    <div class="sticky-footer-row">
+      <button class="btn btn-secondary" onclick="window.print()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Print
+      </button>
+      <button class="btn btn-primary" onclick="logOrder()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        Log Order Placed
+      </button>
+    </div>
+    ${stickyFooterCopyright()}
   </div>`;
   return h;
 }
@@ -1023,10 +1297,13 @@ function renderReceive(){
   h+='</div>';
 
   h+=`<div class="sticky-footer">
-    <button class="btn btn-primary" onclick="confirmReceive('${order.id}')">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-      Confirm Receipt
-    </button>
+    <div class="sticky-footer-row">
+      <button class="btn btn-primary" onclick="confirmReceive('${order.id}')">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Confirm Receipt
+      </button>
+    </div>
+    ${stickyFooterCopyright()}
   </div>`;
   return h;
 }
@@ -1283,6 +1560,7 @@ async function saveEditSession(sessionId){
     sess.counts = merged;
     ls.set('sessions',S.sessions);
     setSyncOk();
+    await noteServerSynced();
     S.editSessionId=null; S.editDraft={};
     showBanner('Count updated!','ok');
     render();
@@ -1303,6 +1581,7 @@ async function deleteSession(sessionId){
     S.sessions = S.sessions.filter(s=>s.id!==sessionId);
     ls.set('sessions',S.sessions);
     setSyncOk();
+    await noteServerSynced();
     S.editSessionId=null; S.editDraft={};
     render();
   }catch(e){
@@ -1322,6 +1601,7 @@ async function completeInventory(){
     S.sessions.unshift(sess);
     ls.set('sessions',S.sessions);
     setSyncOk();
+    await noteServerSynced();
     S.draft={};
     S.countView='list';
     showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
@@ -1351,6 +1631,7 @@ async function logOrder(){
     S.orders.unshift(order);
     ls.set('orders',S.orders);
     setSyncOk();
+    await noteServerSynced();
     showBanner('Order logged! Head to Receive when the truck arrives.','ok');
     render();
   }catch(e){
@@ -1377,6 +1658,7 @@ async function confirmReceive(orderId){
     Object.entries(receivedMap).forEach(([id,v])=>{ if(order.items[id]) order.items[id].received=v; });
     ls.set('orders',S.orders);
     setSyncOk();
+    await noteServerSynced();
     showBanner('Truck order received! Take your next count to track usage.','ok');
     render();
   }catch(e){
@@ -1412,6 +1694,7 @@ async function saveItem(){
     else { const idx=S.items.findIndex(i=>i.id===item.id); if(idx>=0) S.items[idx]=item; }
     ls.set('items',S.items);
     setSyncOk();
+    await noteServerSynced();
     S.formView=null; S.editItemId=null; S.formData=null;
     render();
   }catch(e){
@@ -1427,6 +1710,7 @@ async function deleteItem(id){
     S.items=S.items.filter(i=>i.id!==id);
     ls.set('items',S.items);
     setSyncOk();
+    await noteServerSynced();
     render();
   }catch(e){ setSyncErr(e.message); }
 }
@@ -1510,12 +1794,13 @@ function showBanner(msg,type){
 
 // ─── DATA LOAD ───────────────────────────────────────────────────────────────
 async function loadFromDB(){
-  if(!sb){ loadFromCache(); return; }
+  if(!sb){ loadFromCache(); S.lastRemoteFingerprint=null; return; }
   try{
     const ok = await db.checkTables();
     if(!ok){
       S.dbReady=false;
       loadFromCache();
+      S.lastRemoteFingerprint=null;
       setSyncErr('Tables not found — run setup.sql in Supabase');
       return;
     }
@@ -1532,10 +1817,13 @@ async function loadFromDB(){
     ls.set('items',S.items);
     ls.set('sessions',S.sessions);
     ls.set('orders',S.orders);
+    await mergeLayoutFromRemote();
     setSyncOk();
+    await noteServerSynced();
   }catch(e){
     setSyncErr(e.message);
     loadFromCache();
+    S.lastRemoteFingerprint=null;
   }
 }
 
@@ -1547,6 +1835,20 @@ function loadFromCache(){
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
+async function finishBoot(){
+  await loadFromDB();
+  document.getElementById('loading-overlay').style.display='none';
+  render();
+  startStaleWatcher();
+  if(!window.__ckVisStaleBound){
+    window.__ckVisStaleBound=true;
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='hidden') flushLayoutPushIfPending();
+      if(document.visibilityState==='visible') void checkRemoteStale();
+    });
+  }
+}
+
 async function init(){
   setInterval(updateScheduleChip, 30000);
 
@@ -1559,17 +1861,16 @@ async function init(){
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
 
-  await loadFromDB();
-  getOrderedGroups(S.items).forEach(g=>{
-    const k1=EK1(g.l1);
-    if(S.expanded[k1]===undefined) S.expanded[k1]=true;
-    g.subs.forEach(s=>{
-      const k2=EK2(g.l1,s.l2);
-      if(S.expanded[k2]===undefined) S.expanded[k2]=true;
-    });
-  });
-  document.getElementById('loading-overlay').style.display='none';
-  render();
+  if(!isStoreAuthed()){
+    document.getElementById('loading-overlay').style.display='none';
+    document.getElementById('pin-overlay').style.display='flex';
+    const pi=document.getElementById('pin-input');
+    const er=document.getElementById('pin-err');
+    if(er) er.textContent='';
+    if(pi){ pi.value=''; setTimeout(()=>pi.focus(),80); }
+    return;
+  }
+  await finishBoot();
 }
 
 init();
