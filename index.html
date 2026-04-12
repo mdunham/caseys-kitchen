@@ -401,6 +401,11 @@ function escapeHtml(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+/** Safe for double-quoted onclick="fn(...)" — avoids nested " breaking the attribute */
+function encAttr(v){
+  return encodeURIComponent(JSON.stringify(v));
+}
+
 function updateScheduleChip(){
   const chip = document.getElementById('sched-chip');
   if(!chip) return;
@@ -747,7 +752,7 @@ function renderCount(){
         s.items.forEach(i=>{ tot++; if(draft[i.id]!==undefined&&draft[i.id]!=='') done++; });
       });
       h+=`<div class="l1-block">
-        <button type="button" class="l1-hdr" onclick="toggleCat(${JSON.stringify(k1)})">
+        <button type="button" class="l1-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k1)}')))">
           <div class="l1-title">${svgChevron(open1)}<span>${escapeHtml(l1)}</span></div>
           <span class="badge${done===tot&&tot?' done':''}">${done}/${tot}</span>
         </button>`;
@@ -760,7 +765,7 @@ function renderCount(){
           const its=s.items;
           const cc=its.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
           h+=`<div class="card" style="margin-bottom:8px">
-            <button type="button" class="card-hdr" onclick="toggleCat(${JSON.stringify(k2)})">
+            <button type="button" class="card-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k2)}')))">
               <div class="cat-labels">${svgChevron(open2)}<span class="cat-l2">${escapeHtml(l2)}</span></div>
               <span class="badge${cc===its.length?' done':''}">${cc}/${its.length}</span>
             </button>`;
@@ -841,7 +846,7 @@ function renderEditSession(sessionId){
     const k1='edit/'+EK1(l1);
     const open1=S.expanded[k1]!==false;
     h+=`<div class="l1-block">
-      <button type="button" class="l1-hdr" onclick="toggleCat(${JSON.stringify(k1)})">
+      <button type="button" class="l1-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k1)}')))">
         <div class="l1-title">${svgChevron(open1)}<span>${escapeHtml(l1)}</span></div>
       </button>`;
     if(open1){
@@ -852,7 +857,7 @@ function renderEditSession(sessionId){
         const open2=S.expanded[k2]!==false;
         const its=s.items;
         h+=`<div class="card" style="margin-bottom:8px">
-          <button type="button" class="card-hdr" onclick="toggleCat(${JSON.stringify(k2)})">
+          <button type="button" class="card-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k2)}')))">
             <div class="cat-labels">${svgChevron(open2)}<span class="cat-l2">${escapeHtml(l2)}</span></div>
           </button>`;
         if(open2) its.forEach(item=>{
@@ -1161,8 +1166,8 @@ function renderSetup(){
         <div class="l1-title"><span class="cat-l1">${escapeHtml(l1)}</span></div>
         <div class="setup-l1-tools">
           <div class="reorder-btns" aria-label="Reorder category">
-            <button type="button" onclick="moveL1(${JSON.stringify(l1)},-1)">↑</button>
-            <button type="button" onclick="moveL1(${JSON.stringify(l1)},1)">↓</button>
+            <button type="button" onclick="moveL1(JSON.parse(decodeURIComponent('${encAttr(l1)}')),-1)">↑</button>
+            <button type="button" onclick="moveL1(JSON.parse(decodeURIComponent('${encAttr(l1)}')),1)">↓</button>
           </div>
         </div>
       </div>
@@ -1173,15 +1178,15 @@ function renderSetup(){
         <div class="card-hdr-static" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div class="cat-labels"><span class="cat-l2">${escapeHtml(l2)}</span></div>
           <div class="reorder-btns" aria-label="Reorder subcategory">
-            <button type="button" onclick="moveL2(${JSON.stringify(l1)},${JSON.stringify(l2)},-1)">↑</button>
-            <button type="button" onclick="moveL2(${JSON.stringify(l1)},${JSON.stringify(l2)},1)">↓</button>
+            <button type="button" onclick="moveL2(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),-1)">↑</button>
+            <button type="button" onclick="moveL2(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),1)">↓</button>
           </div>
         </div>`;
       s.items.forEach(item=>{
         h+=`<div class="item-row">
           <div class="reorder-btns" aria-label="Reorder item">
-            <button type="button" onclick="moveItemInGroup(${JSON.stringify(l1)},${JSON.stringify(l2)},${JSON.stringify(item.id)},-1)">↑</button>
-            <button type="button" onclick="moveItemInGroup(${JSON.stringify(l1)},${JSON.stringify(l2)},${JSON.stringify(item.id)},1)">↓</button>
+            <button type="button" onclick="moveItemInGroup(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),JSON.parse(decodeURIComponent('${encAttr(item.id)}')),-1)">↑</button>
+            <button type="button" onclick="moveItemInGroup(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),JSON.parse(decodeURIComponent('${encAttr(item.id)}')),1)">↓</button>
           </div>
           <div style="flex:1;min-width:0">
             <div class="item-name">${escapeHtml(item.name)}</div>
