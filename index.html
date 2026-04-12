@@ -188,6 +188,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:200;font-size:13px;color:#6b7280}
 .spinner{width:28px;height:28px;border:3px solid #f3f4f6;border-top:3px solid var(--ck-red);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* Count form lock (popover-style) */
+.count-form-shell{position:relative;min-height:min(420px,72vh)}
+.count-form-lock{position:absolute;inset:0;z-index:25;display:flex;align-items:center;justify-content:center;padding:16px 12px;background:rgba(246,246,247,.82);backdrop-filter:blur(6px);border-radius:12px;border:1px solid var(--ck-line)}
+.count-form-lock-card{background:#fff;border-radius:12px;padding:18px 16px;max-width:300px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.1);border:1px solid var(--ck-line)}
+.count-form-lock-title{font-size:16px;font-weight:700;color:#111;margin-bottom:6px}
+.count-form-lock-sub{font-size:12px;color:#6b7280;line-height:1.45;margin-bottom:14px}
+.count-form-shell.is-locked .count-form-pane{filter:grayscale(.08) saturate(.85);opacity:.55;pointer-events:none;user-select:none}
 </style>
 </head>
 <body>
@@ -298,6 +305,8 @@ const S = {
   staleDialogOpen: false,
   stalePollId: null,
   staleCheckInFlight: false,
+  /** When false, the count form is covered until "Start new count" is used */
+  countFormActive: false,
 };
 
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
@@ -920,10 +929,14 @@ function enterWalkCount(clearDraft){
   queueWalkFocus();
 }
 
-function startNewCountWalk(){
+/** Main count tab: unlock form and open walk-through from the first item */
+function startNewCountSession(){
   S.historyMode=false;
   S.editSessionId=null;
   S.editDraft={};
+  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  if(!flat.length){ alert('No items to count.'); return; }
+  S.countFormActive=true;
   enterWalkCount(true);
 }
 
@@ -962,12 +975,41 @@ function walkQtyKey(ev){
   if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); walkGo(1); }
 }
 
+/** Tab / Shift+Tab between qty fields in category order; opens collapsed sections when needed */
+function countListQtyKeydown(ev, itemId){
+  if(S.countView!=='list'||!S.countFormActive) return;
+  if(ev.key!=='Tab') return;
+  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  const idx=flat.findIndex(i=>i.id===itemId);
+  if(idx<0) return;
+  const delta=ev.shiftKey?-1:1;
+  const target=flat[idx+delta];
+  if(!target) return;
+  ev.preventDefault();
+  const l1=target.cat_l1||'Other', l2=target.cat_l2||'General';
+  const k1=EK1(l1), k2=EK2(l1,l2);
+  const needRender=S.expanded[k1]!==true||S.expanded[k2]!==true;
+  if(needRender){
+    S.expanded[k1]=true;
+    S.expanded[k2]=true;
+    render();
+    requestAnimationFrame(()=>{
+      const el=document.getElementById('cq-'+target.id);
+      if(el) el.focus();
+    });
+  }else{
+    const el=document.getElementById('cq-'+target.id);
+    if(el) el.focus();
+  }
+}
+
 function renderCount(){
   const draft=S.draft, items=S.items;
   const counted=items.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
   const pct=items.length?Math.round(counted/items.length*100):0;
   const groups=getOrderedGroups(items);
   const lastSess = S.sessions[0];
+  const formLocked=!S.countFormActive;
   let h=`
   <div class="pg-hdr">
     <div><div class="pg-title">Inventory Count</div><div class="pg-sub">${lastSess?'Last: '+fmtDate(lastSess.counted_at):'No previous counts'}</div></div>
@@ -976,6 +1018,8 @@ function renderCount(){
       <button class="btn btn-secondary btn-sm" onclick="toggleHistory()">History</button>
     </div>
   </div>
+  <div class="count-form-shell${formLocked?' is-locked':''}" id="count-form-shell">
+  <div class="count-form-pane"${formLocked?' inert':''}>
   <div class="seg-row">
     <button type="button" class="seg${S.countView==='list'?' on':''}" onclick="setCountView('list')">Full list</button>
     <button type="button" class="seg${S.countView==='walk'?' on':''}" onclick="enterWalkCount(false)">Walk-through</button>
@@ -1051,7 +1095,7 @@ function renderCount(){
                 <div class="item-meta">Par: <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
               </div>
               <div style="display:flex;align-items:center">
-                <input class="qinput" type="number" min="0" step="0.5" value="${val}" placeholder="0" oninput="setDraft('${item.id}',this.value)">
+                <input class="qinput" type="number" min="0" step="0.5" id="cq-${item.id}" value="${val}" placeholder="0" oninput="setDraft('${item.id}',this.value)" onkeydown="countListQtyKeydown(event,'${item.id}')">
                 <span class="ulbl">${escapeHtml(item.unit)}</span>
               </div>
             </div>`;
@@ -1073,7 +1117,18 @@ function renderCount(){
       </button>
     </div>
     ${stickyFooterCopyright()}
+  </div>
   </div>`;
+  if(formLocked){
+    h+=`<div class="count-form-lock" role="dialog" aria-modal="true" aria-labelledby="count-lock-title">
+      <div class="count-form-lock-card">
+        <div class="count-form-lock-title" id="count-lock-title">New inventory count</div>
+        <div class="count-form-lock-sub">Start when you are ready. You will step through items one at a time; switch to <b>Full list</b> anytime.</div>
+        <button type="button" class="btn btn-primary" style="width:100%" onclick="startNewCountSession()">Start new count</button>
+      </div>
+    </div>`;
+  }
+  h+='</div>';
   return h;
 }
 
@@ -1083,7 +1138,7 @@ function renderHistory(){
     <div><div class="pg-title">Count History</div><div class="pg-sub">${S.sessions.length} recorded session${S.sessions.length!==1?'s':''}</div></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn btn-secondary btn-sm" onclick="historyBack()">Back</button>
-      <button class="btn btn-primary btn-sm" onclick="startNewCountWalk()">+ New Count</button>
+      <button class="btn btn-primary btn-sm" onclick="startNewCountSession()">+ New Count</button>
     </div>
   </div>`;
   if(!S.sessions.length) return h+`<div class="empty">No count history yet. Take your first inventory to get started.</div>`;
@@ -1613,6 +1668,7 @@ async function completeInventory(){
     await noteServerSynced();
     S.draft={};
     S.countView='list';
+    S.countFormActive=false;
     showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
     render();
   }catch(e){
@@ -1621,6 +1677,7 @@ async function completeInventory(){
     setSyncErr(e.message);
     S.draft={};
     S.countView='list';
+    S.countFormActive=false;
     render();
   }
 }
