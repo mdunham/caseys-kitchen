@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="36" fill="#e85d04"/>
+  <rect width="192" height="192" rx="36" fill="#ED1C24"/>
   <text x="96" y="72" font-family="system-ui,sans-serif" font-size="42" font-weight="700" fill="white" text-anchor="middle">CK</text>
   <rect x="36" y="90" width="120" height="6" rx="3" fill="white" opacity="0.9"/>
   <rect x="36" y="108" width="90" height="6" rx="3" fill="white" opacity="0.7"/>
