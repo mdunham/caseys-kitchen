@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#e85d04">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="CK Inventory">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon.svg">
+<title>Casey's Kitchen</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#111;font-size:15px}
+.app{display:flex;flex-direction:column;height:100%;max-width:640px;margin:0 auto;position:relative}
+/* Header */
+.hdr{background:#fff;border-bottom:1px solid #eee;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:50}
+.logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+.logo-dot{width:24px;height:24px;background:#e85d04;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700}
+.hdr-right{display:flex;align-items:center;gap:8px}
+.chip{font-size:11px;padding:3px 8px;border-radius:20px;font-weight:500;white-space:nowrap}
+.chip-ok{background:#dcfce7;color:#166534}
+.chip-warn{background:#fef3c7;color:#92400e}
+.chip-danger{background:#fee2e2;color:#991b1b}
+.chip-gray{background:#f3f4f6;color:#6b7280}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:#d1d5db;flex-shrink:0}
+.sync-dot.ok{background:#22c55e}
+.sync-dot.err{background:#ef4444}
+.sync-dot.spin{background:#f59e0b;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+/* Main scroll */
+.main{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px;padding-bottom:80px;-webkit-overflow-scrolling:touch}
+/* Tab bar */
+.tabs{position:sticky;bottom:0;background:#fff;border-top:1px solid #eee;display:flex;z-index:50;flex-shrink:0;padding-bottom:env(safe-area-inset-bottom)}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 4px;background:none;border:none;cursor:pointer;color:#9ca3af;font-size:10px;font-family:inherit;font-weight:400;transition:color .15s}
+.tab.on{color:#e85d04}
+.tab svg{width:19px;height:19px}
+/* Cards & blocks */
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:10px}
+.card-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f3f4f6;background:none;border:none;border-bottom:1px solid #f3f4f6;cursor:pointer;width:100%;font-family:inherit}
+.card-hdr-static{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f3f4f6}
+.cat-l1{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;font-weight:600}
+.cat-l2{font-size:13px;font-weight:600;color:#111}
+.cat-labels{display:flex;align-items:center;gap:5px}
+.badge{display:inline-flex;align-items:center;justify-content:center;font-size:11px;padding:2px 8px;border-radius:20px;background:#f3f4f6;color:#6b7280;font-weight:500}
+.badge.done{background:#dcfce7;color:#166534}
+.badge.warn{background:#fef3c7;color:#92400e}
+.badge.info{background:#dbeafe;color:#1e40af}
+.item-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f9f9f9}
+.item-row:last-child{border-bottom:none}
+.item-name{font-size:13px;font-weight:600;margin-bottom:1px}
+.item-meta{font-size:11px;color:#9ca3af}
+.mono{font-family:'SF Mono',monospace;font-size:10px}
+.qinput{width:64px;padding:7px 6px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;color:#111;font-size:15px;font-family:'SF Mono',monospace;font-weight:600;text-align:center;outline:none;transition:border-color .15s}
+.qinput:focus{border-color:#e85d04;background:#fff}
+.ulbl{font-size:11px;color:#9ca3af;margin-left:3px}
+/* Progress bar */
+.prog{height:4px;background:#f3f4f6;border-radius:2px;margin-bottom:14px;overflow:hidden}
+.prog-fill{height:100%;background:#e85d04;border-radius:2px;transition:width .3s}
+.prog-fill.done{background:#22c55e}
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:5px;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;border:none;transition:opacity .15s}
+.btn:active{opacity:.8}
+.btn-primary{background:#e85d04;color:#fff}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-secondary{background:#f9fafb;color:#374151;border:1px solid #e5e7eb}
+.btn-danger{background:#fee2e2;color:#991b1b}
+.btn-ghost{background:none;color:#6b7280;border:1px solid #e5e7eb}
+.btn-sm{padding:6px 12px;font-size:12px}
+/* Page header row */
+.pg-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.pg-title{font-size:18px;font-weight:700;margin-bottom:2px}
+.pg-sub{font-size:12px;color:#9ca3af}
+/* Sections row */
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+/* Banners */
+.banner{border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.banner-ok{background:#dcfce7;color:#166534}
+.banner-warn{background:#fef3c7;color:#92400e}
+.banner-err{background:#fee2e2;color:#991b1b}
+.banner-info{background:#dbeafe;color:#1e3a8a}
+/* Metric cards */
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.metric{background:#f9fafb;border-radius:10px;padding:10px;text-align:center}
+.metric-v{font-size:22px;font-weight:700;font-family:'SF Mono',monospace;color:#e85d04;line-height:1}
+.metric-l{font-size:11px;color:#9ca3af;margin-top:3px}
+/* Order card */
+.ord-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:10px}
+.ord-top{display:flex;justify-content:space-between;align-items:flex-start}
+.ord-qty{text-align:right;flex-shrink:0;margin-left:12px}
+.ord-qty-n{color:#e85d04;font-size:26px;font-weight:700;font-family:'SF Mono',monospace;line-height:1}
+.bc-wrap{margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6}
+.bc-wrap svg{max-width:100%}
+/* Countdown */
+.countdown-bar{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.countdown-inner{display:flex;align-items:center;justify-content:space-between}
+.countdown-label{font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.countdown-value{font-size:17px;font-weight:700;font-family:'SF Mono',monospace}
+.countdown-divider{width:1px;height:36px;background:#f3f4f6}
+/* Truck schedule */
+.schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;gap:16px}
+.sched-item{flex:1;text-align:center}
+.sched-label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:3px}
+.sched-value{font-size:13px;font-weight:600}
+.sched-time{font-size:11px;color:#6b7280}
+/* History */
+.session-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f9f9f9;cursor:pointer}
+.session-row:last-child{border-bottom:none}
+.session-row:active{background:#f9fafb}
+/* Form */
+.form-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:10px}
+.fg{margin-bottom:12px}
+.flabel{display:block;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.finput{width:100%;padding:9px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;color:#111;font-size:14px;font-family:inherit;outline:none;transition:border-color .15s}
+.finput:focus{border-color:#e85d04;background:#fff}
+.back-btn{display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:#6b7280;font-size:13px;font-family:inherit;cursor:pointer;padding:0 0 10px 0}
+/* Usage bar */
+.usage-bar-wrap{margin-top:6px;height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden}
+.usage-bar-fill{height:100%;border-radius:3px;background:#e85d04}
+/* DB test */
+.test-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f3f4f6;font-size:13px}
+.test-row:last-child{border-bottom:none}
+.test-status{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px}
+.t-pass{background:#dcfce7;color:#166534}
+.t-fail{background:#fee2e2;color:#991b1b}
+.t-skip{background:#f3f4f6;color:#6b7280}
+.t-run{background:#dbeafe;color:#1e40af}
+/* Empty state */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:50px 20px;color:#9ca3af;text-align:center;font-size:13px}
+/* Sticky footer */
+.sticky-footer{background:#fff;border-top:1px solid #eee;padding:12px 0 0;display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:12px}
+/* Scrollable SQL block */
+.sql-block{background:#1e1e2e;color:#cdd6f4;font-size:11px;font-family:'SF Mono',monospace;padding:12px;border-radius:8px;overflow-x:auto;white-space:pre;line-height:1.5;margin:8px 0}
+/* Install banner */
+.install-banner{background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:200;font-size:14px;color:#6b7280}
+.spinner{width:32px;height:32px;border:3px solid #f3f4f6;border-top:3px solid #e85d04;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="spinner"></div>
+    <span id="loading-msg">Connecting to database…</span>
+  </div>
+  <div class="hdr">
+    <div class="logo">
+      <div class="logo-dot">CK</div>
+      Casey's Kitchen
+    </div>
+    <div class="hdr-right">
+      <span id="sched-chip" class="chip chip-gray"></span>
+      <div id="sync-dot" class="sync-dot" title="Sync status"></div>
+    </div>
+  </div>
+  <div class="main" id="main"></div>
+  <nav class="tabs">
+    <button class="tab on" id="t-count" onclick="setTab('count')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+      Count
+    </button>
+    <button class="tab" id="t-order" onclick="setTab('order')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
+      Order
+    </button>
+    <button class="tab" id="t-receive" onclick="setTab('receive')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      Receive
+    </button>
+    <button class="tab" id="t-usage" onclick="setTab('usage')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+      Usage
+    </button>
+    <button class="tab" id="t-setup" onclick="setTab('setup')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Setup
+    </button>
+  </nav>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script>
+// ─── CONFIG ────────────────────────────────────────────────────────────────
+const SB_URL = 'https://lzhawmvgkylumwcseltb.supabase.co';
+const SB_KEY = 'sb_publishable_lVS5Yjtzu_t6c9LKDYTuLA_vGWL_gcC';
+
+const SEED_ITEMS = [
+  {id:'s1',name:'Hot Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1001',sort_order:1},
+  {id:'s2',name:'Mild Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1002',sort_order:2},
+  {id:'s3',name:'Pepperoni',cat_l1:'Freezer',cat_l2:'Meats',par:4,unit:'cs',code:'CSY1003',sort_order:3},
+  {id:'s4',name:'Large Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1010',sort_order:4},
+  {id:'s5',name:'Small Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1011',sort_order:5},
+  {id:'s6',name:'Large Original',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:3,unit:'cs',code:'CSY1012',sort_order:6},
+  {id:'s7',name:'Provolone',cat_l1:'Cooler',cat_l2:'Cheese',par:5,unit:'bags',code:'CSY2001',sort_order:7},
+  {id:'s8',name:'Mozzarella',cat_l1:'Cooler',cat_l2:'Cheese',par:4,unit:'bags',code:'CSY2002',sort_order:8},
+  {id:'s9',name:'Pizza Sauce',cat_l1:'Dry',cat_l2:'Sauces',par:6,unit:'cans',code:'CSY3001',sort_order:9},
+  {id:'s10',name:'Ranch Cups',cat_l1:'Dry',cat_l2:'Condiments',par:8,unit:'cs',code:'CSY3010',sort_order:10},
+];
+
+// ─── SUPABASE ───────────────────────────────────────────────────────────────
+let sb = null;
+try { sb = supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn('Supabase init failed', e); }
+
+// ─── STATE ──────────────────────────────────────────────────────────────────
+const S = {
+  items: [], sessions: [], orders: [],
+  draft: {}, expanded: {},
+  tab: 'count',
+  historyMode: false,
+  editSessionId: null,
+  editDraft: {},
+  formView: null, formData: null, editItemId: null,
+  syncing: false, syncError: null, dbReady: false,
+  installPrompt: null,
+  testResults: null,
+};
+
+// ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
+const ls = {
+  get(k){ try{ const v=localStorage.getItem('ck2_'+k); return v?JSON.parse(v):null; }catch{ return null; }},
+  set(k,v){ try{ localStorage.setItem('ck2_'+k,JSON.stringify(v)); }catch{} }
+};
+
+// ─── DATABASE LAYER ─────────────────────────────────────────────────────────
+const db = {
+  async checkTables(){
+    if(!sb) return false;
+    try{
+      const {error} = await sb.from('ck_items').select('id').limit(1);
+      return !error;
+    }catch{ return false; }
+  },
+
+  async loadAll(){
+    if(!sb) throw new Error('No database connection');
+    // Load items
+    const {data:items,error:ie} = await sb.from('ck_items').select('*').order('sort_order');
+    if(ie) throw ie;
+    // Load sessions + counts
+    const {data:sessions,error:se} = await sb.from('ck_sessions').select('*').order('counted_at',{ascending:false});
+    if(se) throw se;
+    const {data:counts,error:ce} = await sb.from('ck_counts').select('*');
+    if(ce) throw ce;
+    // Load orders + order_items
+    const {data:orders,error:oe} = await sb.from('ck_orders').select('*').order('ordered_at',{ascending:false});
+    if(oe) throw oe;
+    const {data:oitems,error:oie} = await sb.from('ck_order_items').select('*');
+    if(oie) throw oie;
+
+    // Denormalize
+    const sessMap = {};
+    sessions.forEach(s=>{ sessMap[s.id]={...s,counts:{}}; });
+    counts.forEach(c=>{ if(sessMap[c.session_id]) sessMap[c.session_id].counts[c.item_id]=c.count; });
+
+    const ordMap = {};
+    orders.forEach(o=>{ ordMap[o.id]={...o,items:{}}; });
+    oitems.forEach(i=>{ if(ordMap[i.order_id]) ordMap[i.order_id].items[i.item_id]={recommended:i.recommended,received:i.received}; });
+
+    return {
+      items: items||[],
+      sessions: Object.values(sessMap).sort((a,b)=>new Date(b.counted_at)-new Date(a.counted_at)),
+      orders: Object.values(ordMap).sort((a,b)=>new Date(b.ordered_at)-new Date(a.ordered_at))
+    };
+  },
+
+  async seedItems(){
+    const {error} = await sb.from('ck_items').upsert(SEED_ITEMS,{onConflict:'id'});
+    if(error) throw error;
+  },
+
+  async upsertItem(item){
+    const {error} = await sb.from('ck_items').upsert({...item,updated_at:new Date().toISOString()},{onConflict:'id'});
+    if(error) throw error;
+  },
+
+  async deleteItem(id){
+    const {error} = await sb.from('ck_items').delete().eq('id',id);
+    if(error) throw error;
+  },
+
+  async saveSession(sessionId, countedAt, counts){
+    const {error:se} = await sb.from('ck_sessions').upsert({id:sessionId,counted_at:countedAt},{onConflict:'id'});
+    if(se) throw se;
+    const rows = Object.entries(counts).map(([item_id,count])=>({
+      session_id:sessionId, item_id, count:parseFloat(count)||0
+    }));
+    if(rows.length){
+      const {error:ce} = await sb.from('ck_counts').upsert(rows,{onConflict:'session_id,item_id'});
+      if(ce) throw ce;
+    }
+  },
+
+  async updateSessionCounts(sessionId, counts){
+    const rows = Object.entries(counts).map(([item_id,count])=>({
+      session_id:sessionId, item_id, count:parseFloat(count)||0
+    }));
+    const {error} = await sb.from('ck_counts').upsert(rows,{onConflict:'session_id,item_id'});
+    if(error) throw error;
+  },
+
+  async deleteSession(sessionId){
+    const {error} = await sb.from('ck_sessions').delete().eq('id',sessionId);
+    if(error) throw error;
+  },
+
+  async saveOrder(orderId, orderedAt, sessionId, items){
+    const {error:oe} = await sb.from('ck_orders').insert({id:orderId,ordered_at:orderedAt,session_id:sessionId,status:'pending'});
+    if(oe) throw oe;
+    const rows = Object.entries(items).map(([item_id,data])=>({
+      order_id:orderId, item_id, recommended:data.recommended, received:null
+    }));
+    if(rows.length){
+      const {error:oie} = await sb.from('ck_order_items').insert(rows);
+      if(oie) throw oie;
+    }
+  },
+
+  async confirmReceipt(orderId, receivedMap){
+    const {error:oe} = await sb.from('ck_orders').update({status:'received',received_at:new Date().toISOString()}).eq('id',orderId);
+    if(oe) throw oe;
+    for(const [item_id,received] of Object.entries(receivedMap)){
+      const {error} = await sb.from('ck_order_items').update({received}).eq('order_id',orderId).eq('item_id',item_id);
+      if(error) throw error;
+    }
+  }
+};
+
+// ─── SYNC HELPERS ───────────────────────────────────────────────────────────
+function setSyncing(v){ S.syncing=v; S.syncError=null; updateSyncDot(); }
+function setSyncErr(msg){ S.syncing=false; S.syncError=msg; updateSyncDot(); }
+function setSyncOk(){ S.syncing=false; S.syncError=null; updateSyncDot(); }
+function updateSyncDot(){
+  const d=document.getElementById('sync-dot');
+  if(!d) return;
+  if(S.syncing){ d.className='sync-dot spin'; d.title='Syncing…'; }
+  else if(S.syncError){ d.className='sync-dot err'; d.title='Sync error: '+S.syncError; }
+  else { d.className='sync-dot ok'; d.title='Synced'; }
+}
+
+// ─── SCHEDULE HELPERS ───────────────────────────────────────────────────────
+function nextWeekday(dayOfWeek, hour, minute){
+  const now = new Date();
+  const d = new Date(now);
+  let diff = (dayOfWeek - now.getDay() + 7) % 7;
+  if(diff===0){
+    const target = new Date(now);
+    target.setHours(hour,minute,0,0);
+    if(now >= target) diff = 7;
+  }
+  d.setDate(now.getDate()+diff);
+  d.setHours(hour,minute,0,0);
+  return d;
+}
+function getOrderDeadline(){ return nextWeekday(4,14,0); } // Thursday 2pm
+function getTruckArrival(){ return nextWeekday(1,7,0); }   // Monday 7am
+
+function fmtCountdown(ms){
+  if(ms<=0) return 'Now';
+  const h = Math.floor(ms/3600000);
+  const d = Math.floor(h/24);
+  const rh = h%24;
+  const m = Math.floor((ms%3600000)/60000);
+  if(d>0) return d+'d '+rh+'h';
+  if(h>0) return h+'h '+m+'m';
+  return m+'m';
+}
+function fmtDate(iso){ return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
+function fmtTime(iso){ return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
+function fmtDateTime(iso){ return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+
+function updateScheduleChip(){
+  const chip = document.getElementById('sched-chip');
+  if(!chip) return;
+  const now = new Date();
+  const deadline = getOrderDeadline();
+  const ms = deadline - now;
+  const hrs = ms/3600000;
+  const txt = fmtCountdown(ms)+' to order';
+  chip.textContent = txt;
+  chip.className = 'chip '+(hrs<6?'chip-danger':hrs<24?'chip-warn':'chip-ok');
+}
+
+// ─── TREE BUILDER ───────────────────────────────────────────────────────────
+function buildTree(items){
+  const t={};
+  items.forEach(i=>{
+    const l1=i.cat_l1||'Other', l2=i.cat_l2||'General';
+    if(!t[l1]) t[l1]={};
+    if(!t[l1][l2]) t[l1][l2]=[];
+    t[l1][l2].push(i);
+  });
+  return t;
+}
+
+// ─── USAGE ANALYTICS ────────────────────────────────────────────────────────
+function computeUsage(){
+  const result={};
+  S.items.forEach(item=>{ result[item.id]={...item,usages:[],avg:null}; });
+  const receivedOrders = S.orders.filter(o=>o.status==='received');
+  receivedOrders.forEach(order=>{
+    const before = S.sessions.find(s=>s.id===order.session_id);
+    if(!before) return;
+    const recvDate = new Date(order.received_at||order.ordered_at);
+    const after = [...S.sessions]
+      .sort((a,b)=>new Date(a.counted_at)-new Date(b.counted_at))
+      .find(s=>new Date(s.counted_at)>recvDate);
+    if(!after) return;
+    S.items.forEach(item=>{
+      const inOrder = item.id in order.items;
+      const inCounts = item.id in before.counts;
+      if(!inOrder && !inCounts) return; // no meaningful data for this item
+      const b = parseFloat(before.counts[item.id])||0;
+      const r = parseFloat(order.items[item.id]?.received)||0;
+      const a = parseFloat(after.counts[item.id])||0;
+      const used = b + r - a;
+      if(used >= 0) result[item.id].usages.push(used);
+    });
+  });
+  Object.values(result).forEach(r=>{
+    if(r.usages.length) r.avg = r.usages.reduce((a,b)=>a+b,0)/r.usages.length;
+  });
+  return result;
+}
+
+function computeOrder(){
+  if(!S.sessions.length) return [];
+  const last = S.sessions[0]; // sessions sorted desc
+  return S.items.map(item=>{
+    const onHand = parseFloat(last.counts[item.id])||0;
+    const toOrder = Math.ceil(Math.max(0, item.par - onHand));
+    return {...item,onHand,toOrder};
+  }).filter(i=>i.toOrder>0);
+}
+
+// ─── RENDER ─────────────────────────────────────────────────────────────────
+function render(){
+  const m=document.getElementById('main');
+  if(!m) return;
+  updateScheduleChip();
+  if(S.tab==='count')   m.innerHTML=S.historyMode ? renderHistory() : renderCount();
+  if(S.tab==='order')   m.innerHTML=renderOrder();
+  if(S.tab==='receive') m.innerHTML=renderReceive();
+  if(S.tab==='usage')   m.innerHTML=renderUsage();
+  if(S.tab==='setup')   m.innerHTML=renderSetup();
+  if(S.tab==='order') setTimeout(drawBarcodes,60);
+}
+
+function svgChevron(open){
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${open?'#e85d04':'#9ca3af'}" stroke-width="2.5">${open?'<polyline points="6 9 12 15 18 9"/>':'<polyline points="9 18 15 12 9 6"/>'}</svg>`;
+}
+
+// ── COUNT TAB ────────────────────────────────────────────────────────────────
+function renderCount(){
+  const draft=S.draft, items=S.items;
+  const counted=items.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
+  const pct=items.length?Math.round(counted/items.length*100):0;
+  const tree=buildTree(items);
+  const lastSess = S.sessions[0];
+  let h=`
+  <div class="pg-hdr">
+    <div><div class="pg-title">Inventory Count</div><div class="pg-sub">${lastSess?'Last: '+fmtDate(lastSess.counted_at):'No previous counts'}</div></div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span class="badge">${counted}/${items.length}</span>
+      <button class="btn btn-secondary btn-sm" onclick="toggleHistory()">History</button>
+    </div>
+  </div>
+  <div class="prog"><div class="prog-fill${pct===100?' done':''}" id="prog-fill" style="width:${pct}%"></div></div>`;
+
+  if(S.syncError) h+=`<div class="banner banner-err" style="margin-bottom:10px">⚠ ${S.syncError} — data saved locally.</div>`;
+
+  Object.entries(tree).forEach(([l1,subs])=>{
+    Object.entries(subs).forEach(([l2,its])=>{
+      const key=l1+'/'+l2;
+      const isOpen=S.expanded[key]!==false;
+      const cc=its.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
+      h+=`<div class="card">
+        <button class="card-hdr" onclick="toggleCat('${key}')">
+          <div class="cat-labels">${svgChevron(isOpen)}<span class="cat-l1">${l1}</span><span style="color:#d1d5db;font-size:11px">›</span><span class="cat-l2">${l2}</span></div>
+          <span class="badge${cc===its.length?' done':''}">${cc}/${its.length}</span>
+        </button>`;
+      if(isOpen) its.forEach(item=>{
+        const val=draft[item.id]!==undefined?draft[item.id]:'';
+        h+=`<div class="item-row">
+          <div>
+            <div class="item-name">${item.name}</div>
+            <div class="item-meta">Par: <b style="color:#e85d04">${item.par}</b> ${item.unit} · <span class="mono">${item.code}</span></div>
+          </div>
+          <div style="display:flex;align-items:center">
+            <input class="qinput" type="number" min="0" step="0.5" value="${val}" placeholder="0" oninput="setDraft('${item.id}',this.value)">
+            <span class="ulbl">${item.unit}</span>
+          </div>
+        </div>`;
+      });
+      h+='</div>';
+    });
+  });
+
+  h+=`<div class="sticky-footer">
+    <span style="font-size:12px;color:#9ca3af">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</span>
+    <button class="btn btn-primary" onclick="completeInventory()" ${counted===0?'disabled':''}>
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      Save Count
+    </button>
+  </div>`;
+  return h;
+}
+
+function renderHistory(){
+  let h=`
+  <div class="pg-hdr">
+    <div><div class="pg-title">Count History</div><div class="pg-sub">${S.sessions.length} recorded session${S.sessions.length!==1?'s':''}</div></div>
+    <button class="btn btn-secondary btn-sm" onclick="toggleHistory()">+ New Count</button>
+  </div>`;
+  if(!S.sessions.length) return h+`<div class="empty">No count history yet. Take your first inventory to get started.</div>`;
+  if(S.editSessionId){
+    return h + renderEditSession(S.editSessionId);
+  }
+  h+='<div class="card">';
+  S.sessions.forEach(sess=>{
+    const ct=Object.values(sess.counts).filter(v=>v!==undefined).length;
+    h+=`<div class="session-row" onclick="startEditSession('${sess.id}')">
+      <div>
+        <div style="font-size:13px;font-weight:600">${fmtDate(sess.counted_at)}</div>
+        <div class="item-meta">${ct} items counted · ${fmtTime(sess.counted_at)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="badge info">${ct}</span>
+        <svg width="14" height="14" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </div>`;
+  });
+  h+='</div>';
+  return h;
+}
+
+function renderEditSession(sessionId){
+  const sess = S.sessions.find(s=>s.id===sessionId);
+  if(!sess) return '<div class="empty">Session not found.</div>';
+  const draft = S.editDraft;
+  const tree = buildTree(S.items);
+  let h=`
+  <div class="banner banner-info" style="margin-bottom:12px">
+    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    Editing: ${fmtDateTime(sess.counted_at)}
+  </div>`;
+  Object.entries(tree).forEach(([l1,subs])=>{
+    Object.entries(subs).forEach(([l2,its])=>{
+      const key='edit/'+l1+'/'+l2;
+      const isOpen=S.expanded[key]!==false;
+      h+=`<div class="card">
+        <button class="card-hdr" onclick="toggleCat('${key}')">
+          <div class="cat-labels">${svgChevron(isOpen)}<span class="cat-l1">${l1}</span><span style="color:#d1d5db;font-size:11px">›</span><span class="cat-l2">${l2}</span></div>
+        </button>`;
+      if(isOpen) its.forEach(item=>{
+        const orig = sess.counts[item.id]!==undefined ? sess.counts[item.id] : '';
+        const val = draft[item.id]!==undefined ? draft[item.id] : orig;
+        const changed = draft[item.id]!==undefined && String(draft[item.id])!==String(orig);
+        h+=`<div class="item-row">
+          <div>
+            <div class="item-name">${item.name}${changed?'<span style="color:#e85d04;font-size:10px;margin-left:5px">●</span>':''}</div>
+            <div class="item-meta">Par: ${item.par} ${item.unit}</div>
+          </div>
+          <div style="display:flex;align-items:center">
+            <input class="qinput" type="number" min="0" step="0.5" value="${val}" placeholder="0" oninput="setEditDraft('${item.id}',this.value)">
+            <span class="ulbl">${item.unit}</span>
+          </div>
+        </div>`;
+      });
+      h+='</div>';
+    });
+  });
+  h+=`<div class="sticky-footer">
+    <button class="btn btn-danger btn-sm" onclick="deleteSession('${sessionId}')">Delete</button>
+    <button class="btn btn-secondary btn-sm" onclick="cancelEditSession()">Cancel</button>
+    <button class="btn btn-primary btn-sm" onclick="saveEditSession('${sessionId}')">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      Save Edits
+    </button>
+  </div>`;
+  return h;
+}
+
+// ── ORDER TAB ────────────────────────────────────────────────────────────────
+function renderOrder(){
+  const deadline = getOrderDeadline();
+  const ms = deadline - new Date();
+  const hrs = ms/3600000;
+  const chipCls = hrs<6?'chip-danger':hrs<24?'chip-warn':'chip-ok';
+
+  let h=`
+  <div class="pg-hdr">
+    <div><div class="pg-title">Recommended Order</div><div class="pg-sub">Order by Thu 2pm · Arrives Mon 7am</div></div>
+  </div>
+  <div class="countdown-bar">
+    <div class="countdown-inner">
+      <div>
+        <div class="countdown-label">Order deadline</div>
+        <div class="countdown-value" style="color:${hrs<6?'#991b1b':hrs<24?'#92400e':'#166534'}">${fmtCountdown(ms)}</div>
+      </div>
+      <div class="countdown-divider"></div>
+      <div style="text-align:right">
+        <div class="countdown-label">Truck arrives</div>
+        <div class="countdown-value" style="color:#1e40af">${fmtCountdown(getTruckArrival()-new Date())}</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px">
+      <span style="font-size:11px;color:#9ca3af">Thu, ${deadline.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span>
+      <span style="font-size:11px;color:#9ca3af">Mon, ${getTruckArrival().toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span>
+    </div>
+  </div>`;
+
+  if(!S.sessions.length) return h+`<div class="empty">Take an inventory count first to generate an order.</div>`;
+  const orderItems = computeOrder();
+  const last = S.sessions[0];
+  h+=`<div class="banner banner-info" style="margin-bottom:10px">Based on count from ${fmtDate(last.counted_at)}</div>`;
+  if(!orderItems.length) return h+`<div class="empty" style="color:#166534">✓ All items at or above par — no order needed!</div>`;
+
+  const pending = S.orders.filter(o=>o.status==='pending');
+  if(pending.length) h+=`<div class="banner banner-warn">You have a pending unconfirmed order. Placing a new one will replace it.</div>`;
+
+  orderItems.forEach(item=>{
+    h+=`<div class="ord-card">
+      <div class="ord-top">
+        <div>
+          <div class="item-name" style="font-size:14px">${item.name}</div>
+          <div class="item-meta">${item.cat_l1} › ${item.cat_l2}</div>
+          <div class="item-meta">On hand: <span style="color:#d97706;font-weight:600">${item.onHand}</span> · Par: <span style="font-weight:600">${item.par}</span> ${item.unit}</div>
+        </div>
+        <div class="ord-qty">
+          <div class="ord-qty-n">${item.toOrder}</div>
+          <div class="ulbl">${item.unit}</div>
+        </div>
+      </div>
+      <div class="bc-wrap"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div></div>
+    </div>`;
+  });
+
+  h+=`<div class="sticky-footer">
+    <button class="btn btn-secondary" onclick="window.print()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Print
+    </button>
+    <button class="btn btn-primary" onclick="logOrder()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      Log Order Placed
+    </button>
+  </div>`;
+  return h;
+}
+
+function drawBarcodes(){
+  const orderItems = computeOrder();
+  orderItems.forEach(item=>{
+    const wrap = document.getElementById('bc-'+item.id);
+    if(!wrap || !item.code) return;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    wrap.innerHTML='';
+    wrap.appendChild(svg);
+    try{
+      JsBarcode(svg,item.code,{format:'CODE128',width:1.8,height:52,displayValue:true,fontSize:12,margin:8,background:'#fff',lineColor:'#000'});
+      svg.style.maxWidth='100%';
+    }catch(e){
+      wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${item.code}</span>`;
+    }
+  });
+}
+
+// ── RECEIVE TAB ──────────────────────────────────────────────────────────────
+function renderReceive(){
+  const arrival = getTruckArrival();
+  let h=`
+  <div class="pg-hdr">
+    <div><div class="pg-title">Receive Truck Order</div><div class="pg-sub">Log what actually arrived</div></div>
+  </div>
+  <div class="schedule-card">
+    <div class="sched-item">
+      <div class="sched-label">Truck arrives</div>
+      <div class="sched-value">Monday</div>
+      <div class="sched-time">7:00 AM</div>
+    </div>
+    <div style="width:1px;background:#f3f4f6"></div>
+    <div class="sched-item">
+      <div class="sched-label">Next arrival</div>
+      <div class="sched-value">${fmtCountdown(arrival-new Date())}</div>
+      <div class="sched-time">${arrival.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+    </div>
+  </div>`;
+
+  const pending = S.orders.filter(o=>o.status==='pending');
+  if(!pending.length) return h+`<div class="empty">No pending orders. Place an order from the Order tab first.</div>`;
+
+  const order = pending[0];
+  h+=`<div class="banner banner-info">Order placed ${fmtDate(order.ordered_at)} · ${Object.keys(order.items).length} items</div>`;
+  h+=`<div class="card">`;
+  h+=`<div class="card-hdr-static"><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Item</span><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Received</span></div>`;
+
+  Object.entries(order.items).forEach(([itemId,data])=>{
+    const item = S.items.find(i=>i.id===itemId);
+    if(!item) return;
+    h+=`<div class="item-row">
+      <div>
+        <div class="item-name">${item.name}</div>
+        <div class="item-meta">Ordered: <span style="color:#e85d04;font-weight:600">${data.recommended}</span> ${item.unit}</div>
+      </div>
+      <div style="display:flex;align-items:center">
+        <input class="qinput" type="number" min="0" step="0.5" id="recv-${itemId}" placeholder="${data.recommended}">
+        <span class="ulbl">${item.unit}</span>
+      </div>
+    </div>`;
+  });
+  h+='</div>';
+
+  h+=`<div class="sticky-footer">
+    <button class="btn btn-primary" onclick="confirmReceive('${order.id}')">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      Confirm Receipt
+    </button>
+  </div>`;
+  return h;
+}
+
+// ── USAGE TAB ────────────────────────────────────────────────────────────────
+function renderUsage(){
+  const usage = computeUsage();
+  const withData = Object.values(usage).filter(u=>u.avg!==null).sort((a,b)=>b.avg-a.avg);
+  const recvd = S.orders.filter(o=>o.status==='received');
+  const maxAvg = withData.length ? withData[0].avg : 1;
+
+  let h=`
+  <div class="pg-hdr"><div><div class="pg-title">Weekly Usage</div><div class="pg-sub">Average consumption per item per week</div></div></div>
+  <div class="metrics">
+    <div class="metric"><div class="metric-v">${S.sessions.length}</div><div class="metric-l">counts</div></div>
+    <div class="metric"><div class="metric-v">${recvd.length}</div><div class="metric-l">cycles</div></div>
+    <div class="metric"><div class="metric-v">${withData.length}</div><div class="metric-l">tracked</div></div>
+  </div>`;
+
+  if(!withData.length){
+    h+=`<div class="empty">
+      Usage data unlocks after completing a full cycle:<br><br>
+      <strong>Count → Place Order → Receive Truck → Count Again</strong>
+    </div>`;
+    return h;
+  }
+
+  h+='<div class="card">';
+  Object.values(usage).forEach(u=>{
+    const bar = u.avg!==null ? Math.min(100,Math.round(u.avg/maxAvg*100)) : 0;
+    const parRatio = u.avg!==null ? u.avg/u.par : null;
+    let parNote='';
+    if(parRatio!==null){
+      if(parRatio>0.9) parNote=`<span class="badge warn" style="font-size:10px">Par may be low</span>`;
+      else if(parRatio<0.3) parNote=`<span class="badge" style="font-size:10px">Par may be high</span>`;
+    }
+    h+=`<div class="item-row" style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="item-name">${u.name}</div>
+          <div class="item-meta">${u.cat_l1} › ${u.cat_l2} · ${u.usages.length} data pt${u.usages.length!==1?'s':''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:12px">
+          ${u.avg!==null?`
+            <div style="font-size:20px;font-weight:700;font-family:'SF Mono',monospace;color:#e85d04;line-height:1">${u.avg.toFixed(1)}</div>
+            <div class="ulbl">${u.unit}/wk</div>
+            <div style="margin-top:4px">${parNote}</div>
+          `:`<div style="font-size:11px;color:#9ca3af">pending</div>`}
+        </div>
+      </div>
+      ${u.avg!==null?`<div style="display:flex;align-items:center;gap:8px">
+        <div class="usage-bar-wrap" style="flex:1"><div class="usage-bar-fill" style="width:${bar}%"></div></div>
+        <span style="font-size:10px;color:#9ca3af;flex-shrink:0">Par: ${u.par}</span>
+      </div>`:''}
+    </div>`;
+  });
+  h+='</div>';
+
+  if(withData.length){
+    h+=`<div style="font-size:11px;color:#9ca3af;text-align:center;margin-top:8px;padding:0 12px">
+      "Par may be low" = using >90% of par level weekly. "Par may be high" = using <30%.
+    </div>`;
+  }
+  return h;
+}
+
+// ── SETUP TAB ────────────────────────────────────────────────────────────────
+function renderSetup(){
+  if(S.formView==='add'||S.formView==='edit'){
+    const f=S.formData||{};
+    const l1s=[...new Set(S.items.map(i=>i.cat_l1))].filter(Boolean);
+    const l2s=[...new Set(S.items.map(i=>i.cat_l2))].filter(Boolean);
+    return `
+    <button class="back-btn" onclick="cancelForm()">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      Back to items
+    </button>
+    <div class="pg-title" style="margin-bottom:14px">${S.formView==='add'?'Add New Item':'Edit Item'}</div>
+    <div class="form-card">
+      ${fg('Item Name','name',f.name||'','text','e.g. Hot Sausage')}
+      ${fg('Category Level 1','cat_l1',f.cat_l1||'','text','e.g. Freezer',l1s)}
+      ${fg('Category Level 2','cat_l2',f.cat_l2||'','text','e.g. Meats',l2s)}
+      ${fg('Par Level','par',f.par||'','number','e.g. 3')}
+      ${fg('Unit','unit',f.unit||'cs','text','e.g. cs, bags, lbs, cans')}
+      ${fg('Item Code (barcode)','code',f.code||'','text','e.g. CSY1001')}
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary" onclick="saveItem()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          Save
+        </button>
+        <button class="btn btn-secondary" onclick="cancelForm()">Cancel</button>
+      </div>
+    </div>`;
+  }
+
+  const tree = buildTree(S.items);
+  let h=`
+  <div class="pg-hdr">
+    <div><div class="pg-title">Item Setup</div><div class="pg-sub">${S.items.length} items · ${S.sessions.length} sessions</div></div>
+    <button class="btn btn-primary btn-sm" onclick="startAdd()">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add Item
+    </button>
+  </div>`;
+
+  if(S.installPrompt) h+=`
+  <div class="install-banner">
+    <div>
+      <div style="font-size:13px;font-weight:600">Install as App</div>
+      <div style="font-size:11px;color:#6b7280">Add to home screen for offline access</div>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="installPWA()">Install</button>
+  </div>`;
+
+  // DB Status
+  h+=`<div class="form-card" style="margin-bottom:10px">
+    <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:10px">Database Status</div>
+    <div class="test-row"><span>Supabase connection</span><span class="test-status ${S.dbReady?'t-pass':'t-fail'}">${S.dbReady?'Connected':'Error'}</span></div>
+    <div class="test-row"><span>Tables initialized</span><span class="test-status ${S.dbReady?'t-pass':'t-fail'}">${S.dbReady?'Ready':'Not found'}</span></div>
+    <div class="test-row"><span>Items in database</span><span class="test-status t-pass">${S.items.length}</span></div>
+    <div class="test-row"><span>Sync status</span><span class="test-status ${S.syncError?'t-fail':'t-pass'}">${S.syncError||'OK'}</span></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-secondary btn-sm" onclick="runTests()">Run Tests</button>
+      <button class="btn btn-secondary btn-sm" onclick="reloadData()">Refresh Data</button>
+    </div>
+    ${S.testResults?renderTestResults():''}
+  </div>`;
+
+  Object.entries(tree).forEach(([l1,subs])=>{
+    Object.entries(subs).forEach(([l2,its])=>{
+      h+=`<div class="card"><div class="card-hdr-static"><div class="cat-labels"><span class="cat-l1">${l1}</span><span style="color:#d1d5db;font-size:11px">›</span><span class="cat-l2">${l2}</span></div></div>`;
+      its.forEach(item=>{
+        h+=`<div class="item-row">
+          <div style="flex:1;min-width:0">
+            <div class="item-name">${item.name}</div>
+            <div class="item-meta">Par: ${item.par} ${item.unit} · <span class="mono">${item.code}</span></div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn btn-secondary btn-sm" onclick="startEdit('${item.id}')">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="deleteItem('${item.id}')">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+            </button>
+          </div>
+        </div>`;
+      });
+      h+='</div>';
+    });
+  });
+  return h;
+}
+
+function renderTestResults(){
+  if(!S.testResults) return '';
+  let h=`<div style="margin-top:12px;border-top:1px solid #f3f4f6;padding-top:10px">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Test Results</div>`;
+  S.testResults.forEach(t=>{
+    h+=`<div class="test-row"><span>${t.name}</span><span class="test-status ${t.pass?'t-pass':t.skip?'t-skip':'t-fail'}">${t.pass?'PASS':t.skip?'SKIP':'FAIL'}${t.msg?' — '+t.msg:''}</span></div>`;
+  });
+  h+='</div>';
+  return h;
+}
+
+function fg(label,field,val,type,ph,suggestions){
+  let input=`<input class="finput" type="${type}" id="f-${field}" value="${val}" placeholder="${ph}" oninput="updateForm('${field}',this.value)"${suggestions?` list="dl-${field}"`:''}></input>`;
+  let dl=suggestions?`<datalist id="dl-${field}">${suggestions.map(s=>`<option value="${s}">`).join('')}</datalist>`:'';
+  return `<div class="fg"><label class="flabel">${label}</label>${input}${dl}</div>`;
+}
+
+// ─── EVENT HANDLERS ──────────────────────────────────────────────────────────
+function setTab(t){
+  S.tab=t; S.historyMode=false; S.editSessionId=null;
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+  const tb=document.getElementById('t-'+t); if(tb) tb.classList.add('on');
+  render();
+}
+
+function toggleCat(key){ S.expanded[key]=!S.expanded[key]; render(); }
+
+function setDraft(id,val){
+  S.draft[id]=val;
+  const items=S.items, d=S.draft;
+  const counted=items.filter(i=>d[i.id]!==undefined&&d[i.id]!=='').length;
+  const pct=items.length?Math.round(counted/items.length*100):0;
+  const pf=document.getElementById('prog-fill');
+  if(pf){pf.style.width=pct+'%';pf.className='prog-fill'+(pct===100?' done':'');}
+  const badge=document.querySelector('.pg-hdr .badge');
+  if(badge) badge.textContent=counted+'/'+items.length;
+  const sb2=document.querySelector('.sticky-footer .btn-primary');
+  if(sb2) sb2.disabled=counted===0;
+}
+
+function setEditDraft(id,val){ S.editDraft[id]=val; }
+
+function toggleHistory(){ S.historyMode=!S.historyMode; S.editSessionId=null; S.editDraft={}; render(); }
+
+function startEditSession(id){
+  S.editSessionId=id;
+  S.editDraft={};
+  render();
+}
+
+function cancelEditSession(){ S.editSessionId=null; S.editDraft={}; render(); }
+
+async function saveEditSession(sessionId){
+  const sess = S.sessions.find(s=>s.id===sessionId);
+  if(!sess) return;
+  const merged = {...sess.counts,...S.editDraft};
+  try{
+    setSyncing(true);
+    await db.updateSessionCounts(sessionId, merged);
+    sess.counts = merged;
+    ls.set('sessions',S.sessions);
+    setSyncOk();
+    S.editSessionId=null; S.editDraft={};
+    showBanner('Count updated!','ok');
+    render();
+  }catch(e){
+    sess.counts = merged;
+    ls.set('sessions',S.sessions);
+    setSyncErr(e.message);
+    S.editSessionId=null; S.editDraft={};
+    render();
+  }
+}
+
+async function deleteSession(sessionId){
+  if(!confirm('Delete this inventory session? This will also affect usage calculations.')) return;
+  try{
+    setSyncing(true);
+    await db.deleteSession(sessionId);
+    S.sessions = S.sessions.filter(s=>s.id!==sessionId);
+    ls.set('sessions',S.sessions);
+    setSyncOk();
+    S.editSessionId=null; S.editDraft={};
+    render();
+  }catch(e){
+    setSyncErr(e.message);
+  }
+}
+
+async function completeInventory(){
+  const id = Date.now().toString();
+  const countedAt = new Date().toISOString();
+  const counts = {};
+  S.items.forEach(i=>{ counts[i.id]=parseFloat(S.draft[i.id])||0; });
+  const sess = {id,counted_at:countedAt,notes:'',counts};
+  try{
+    setSyncing(true);
+    await db.saveSession(id,countedAt,counts);
+    S.sessions.unshift(sess);
+    ls.set('sessions',S.sessions);
+    setSyncOk();
+    S.draft={};
+    showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
+    render();
+  }catch(e){
+    S.sessions.unshift(sess);
+    ls.set('sessions',S.sessions);
+    setSyncErr(e.message);
+    S.draft={};
+    render();
+  }
+}
+
+async function logOrder(){
+  const orderItems = computeOrder();
+  if(!orderItems.length) return;
+  const id = Date.now().toString();
+  const orderedAt = new Date().toISOString();
+  const sessionId = S.sessions[0]?.id;
+  const items = {};
+  orderItems.forEach(i=>{ items[i.id]={recommended:i.toOrder,received:null}; });
+  const order = {id,ordered_at:orderedAt,session_id:sessionId,status:'pending',items};
+  try{
+    setSyncing(true);
+    await db.saveOrder(id,orderedAt,sessionId,items);
+    S.orders.unshift(order);
+    ls.set('orders',S.orders);
+    setSyncOk();
+    showBanner('Order logged! Head to Receive when the truck arrives.','ok');
+    render();
+  }catch(e){
+    S.orders.unshift(order);
+    ls.set('orders',S.orders);
+    setSyncErr(e.message);
+    render();
+  }
+}
+
+async function confirmReceive(orderId){
+  const order = S.orders.find(o=>o.id===orderId);
+  if(!order) return;
+  const receivedMap={};
+  Object.entries(order.items).forEach(([itemId,data])=>{
+    const inp=document.getElementById('recv-'+itemId);
+    receivedMap[itemId]=inp&&inp.value!==''?parseFloat(inp.value):data.recommended;
+  });
+  try{
+    setSyncing(true);
+    await db.confirmReceipt(orderId,receivedMap);
+    order.status='received';
+    order.received_at=new Date().toISOString();
+    Object.entries(receivedMap).forEach(([id,v])=>{ if(order.items[id]) order.items[id].received=v; });
+    ls.set('orders',S.orders);
+    setSyncOk();
+    showBanner('Truck order received! Take your next count to track usage.','ok');
+    render();
+  }catch(e){
+    setSyncErr(e.message);
+  }
+}
+
+// ITEM FORM
+function startAdd(){ S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',code:''}; render(); }
+function startEdit(id){
+  const item=S.items.find(i=>i.id===id); if(!item) return;
+  S.formView='edit'; S.editItemId=id;
+  S.formData={name:item.name,cat_l1:item.cat_l1,cat_l2:item.cat_l2,par:String(item.par),unit:item.unit,code:item.code};
+  render();
+}
+function cancelForm(){ S.formView=null; S.editItemId=null; S.formData=null; render(); }
+function updateForm(f,v){ if(!S.formData) S.formData={}; S.formData[f]=v; }
+
+async function saveItem(){
+  const f=S.formData||{};
+  if(!f.name||!f.cat_l1||!f.par){ alert('Name, Category Level 1, and Par Level are required.'); return; }
+  const item={
+    id: S.formView==='add'?Date.now().toString():S.editItemId,
+    name:f.name, cat_l1:f.cat_l1, cat_l2:f.cat_l2||'',
+    par:parseFloat(f.par)||1, unit:f.unit||'cs', code:f.code||'',
+    sort_order: S.items.length+1
+  };
+  try{
+    setSyncing(true);
+    await db.upsertItem(item);
+    if(S.formView==='add') S.items.push(item);
+    else { const idx=S.items.findIndex(i=>i.id===item.id); if(idx>=0) S.items[idx]=item; }
+    ls.set('items',S.items);
+    setSyncOk();
+    S.formView=null; S.editItemId=null; S.formData=null;
+    render();
+  }catch(e){
+    setSyncErr(e.message);
+  }
+}
+
+async function deleteItem(id){
+  if(!confirm('Delete this item? Historical count data for this item will also be removed.')) return;
+  try{
+    setSyncing(true);
+    await db.deleteItem(id);
+    S.items=S.items.filter(i=>i.id!==id);
+    ls.set('items',S.items);
+    setSyncOk();
+    render();
+  }catch(e){ setSyncErr(e.message); }
+}
+
+// ─── PWA INSTALL ─────────────────────────────────────────────────────────────
+function installPWA(){
+  if(S.installPrompt){ S.installPrompt.prompt(); S.installPrompt=null; render(); }
+}
+
+// ─── TESTS ───────────────────────────────────────────────────────────────────
+async function runTests(){
+  S.testResults=[{name:'Running…',pass:false,skip:true}];
+  render();
+  const results=[];
+
+  // Test 1: Supabase client initialized
+  results.push({name:'Supabase client init',pass:!!sb,msg:sb?'':'createClient failed'});
+
+  // Test 2: DB connection
+  let connected=false;
+  try{ connected = await db.checkTables(); } catch(e){ }
+  results.push({name:'Database tables exist',pass:connected,msg:connected?'':'Run setup.sql in Supabase SQL Editor'});
+
+  // Test 3: Items loaded
+  results.push({name:'Items data loaded',pass:S.items.length>0,msg:S.items.length+' items'});
+
+  // Test 4: Write test (insert + delete a test session)
+  if(connected){
+    try{
+      const testId='test_'+Date.now();
+      await sb.from('ck_sessions').insert({id:testId,counted_at:new Date().toISOString()});
+      await sb.from('ck_sessions').delete().eq('id',testId);
+      results.push({name:'Write/delete cycle',pass:true,msg:'Insert + delete OK'});
+    }catch(e){ results.push({name:'Write/delete cycle',pass:false,msg:e.message}); }
+  } else {
+    results.push({name:'Write/delete cycle',pass:false,skip:true,msg:'Skipped (no DB)'});
+  }
+
+  // Test 5: Schedule logic
+  const dl=getOrderDeadline(), ta=getTruckArrival();
+  const dlOk=dl>new Date()&&dl.getDay()===4;
+  const taOk=ta>new Date()&&ta.getDay()===1;
+  results.push({name:'Deadline is next Thursday 2pm',pass:dlOk,msg:dlOk?fmtDateTime(dl):'logic error'});
+  results.push({name:'Truck arrival is next Monday 7am',pass:taOk,msg:taOk?fmtDateTime(ta):'logic error'});
+
+  // Test 6: Usage computation
+  const usageOk=typeof computeUsage()==='object';
+  results.push({name:'Usage computation',pass:usageOk});
+
+  // Test 7: Order computation
+  const orderOk=Array.isArray(computeOrder());
+  results.push({name:'Order computation',pass:orderOk});
+
+  // Test 8: LocalStorage fallback
+  let lsOk=false;
+  try{ ls.set('_test','ok'); lsOk=ls.get('_test')==='ok'; ls.set('_test',null); }catch{}
+  results.push({name:'LocalStorage fallback',pass:lsOk});
+
+  S.testResults=results;
+  render();
+}
+
+async function reloadData(){
+  document.getElementById('loading-overlay').style.display='flex';
+  document.getElementById('loading-msg').textContent='Refreshing data…';
+  await loadFromDB();
+  document.getElementById('loading-overlay').style.display='none';
+  render();
+}
+
+// ─── BANNER HELPER ───────────────────────────────────────────────────────────
+function showBanner(msg,type){
+  const m=document.getElementById('main');
+  if(!m) return;
+  const div=document.createElement('div');
+  div.className='banner banner-'+(type==='ok'?'ok':'err');
+  div.innerHTML=`<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> ${msg}`;
+  m.prepend(div);
+  setTimeout(()=>div.remove(),3000);
+}
+
+// ─── DATA LOAD ───────────────────────────────────────────────────────────────
+async function loadFromDB(){
+  if(!sb){ loadFromCache(); return; }
+  try{
+    const ok = await db.checkTables();
+    if(!ok){
+      S.dbReady=false;
+      loadFromCache();
+      setSyncErr('Tables not found — run setup.sql in Supabase');
+      return;
+    }
+    S.dbReady=true;
+    const {items,sessions,orders} = await db.loadAll();
+    if(!items.length){
+      await db.seedItems();
+      S.items = SEED_ITEMS;
+    } else {
+      S.items = items;
+    }
+    S.sessions = sessions;
+    S.orders = orders;
+    ls.set('items',S.items);
+    ls.set('sessions',S.sessions);
+    ls.set('orders',S.orders);
+    setSyncOk();
+  }catch(e){
+    setSyncErr(e.message);
+    loadFromCache();
+  }
+}
+
+function loadFromCache(){
+  const items = ls.get('items');
+  S.items = items||SEED_ITEMS;
+  S.sessions = ls.get('sessions')||[];
+  S.orders = ls.get('orders')||[];
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+async function init(){
+  // Init expanded state
+  const tree = buildTree(SEED_ITEMS);
+  Object.entries(tree).forEach(([l1,subs])=>{
+    Object.keys(subs).forEach(l2=>{ S.expanded[l1+'/'+l2]=true; });
+  });
+
+  // Countdown chip updater
+  setInterval(updateScheduleChip, 30000);
+
+  // PWA events
+  window.addEventListener('beforeinstallprompt',e=>{
+    S.installPrompt=e; e.preventDefault();
+    if(S.tab==='setup') render();
+  });
+
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  }
+
+  // Load data
+  await loadFromDB();
+  document.getElementById('loading-overlay').style.display='none';
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
