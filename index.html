@@ -50,6 +50,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .badge.info{background:#dbeafe;color:#1e40af}
 .item-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f9f9f9}
 .item-row:last-child{border-bottom:none}
+.l1-block{margin-bottom:12px}
+.l1-hdr{display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px 14px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px}
+.l1-hdr:active{background:#fafafa}
+.l1-title{font-size:15px;font-weight:700;color:#111;display:flex;align-items:center;gap:8px}
+.l1-inner{padding-left:4px}
+.seg-row{display:flex;gap:0;margin-bottom:12px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+.seg{flex:1;padding:10px 8px;border:none;background:#fff;font-family:inherit;font-size:12px;font-weight:500;color:#6b7280;cursor:pointer}
+.seg.on{background:#fff7ed;color:#c2410c;box-shadow:inset 0 -2px 0 #e85d04;font-weight:600}
+.walk-bar{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.walk-selects{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.walk-selects select{width:100%;padding:9px 10px;border-radius:8px;border:1px solid #e5e7eb;font-size:13px;font-family:inherit;background:#fff;color:#111}
+.walk-card{text-align:center;padding:20px 16px 16px}
+.walk-breadcrumb{font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.walk-name{font-size:20px;font-weight:700;color:#111;margin-bottom:6px;line-height:1.25}
+.walk-meta{font-size:13px;color:#6b7280;margin-bottom:16px}
+.walk-qty{width:100%;max-width:200px;padding:14px 12px;font-size:24px;font-weight:700;border-radius:12px;border:2px solid #e5e7eb;background:#fafafa;margin:0 auto 16px;display:block;text-align:center;font-family:'SF Mono',monospace}
+.walk-qty:focus{border-color:#e85d04;background:#fff;outline:none}
+.walk-nav{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:4px}
+.walk-pos{font-size:12px;color:#9ca3af;margin-bottom:10px}
+.reorder-btns{display:flex;flex-direction:column;gap:2px;margin-right:4px}
+.reorder-btns button{min-width:28px;padding:2px 0;font-size:11px;line-height:1;border-radius:4px;border:1px solid #e5e7eb;background:#f9fafb;cursor:pointer;font-family:inherit;color:#374151}
+.reorder-btns button:active{background:#eee}
+.setup-l1-tools{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .item-name{font-size:13px;font-weight:600;margin-bottom:1px}
 .item-meta{font-size:11px;color:#9ca3af}
 .mono{font-family:'SF Mono',monospace;font-size:10px}
@@ -217,6 +240,8 @@ const S = {
   syncing: false, syncError: null, dbReady: false,
   installPrompt: null,
   testResults: null,
+  countView: 'list',
+  walkIndex: 0,
 };
 
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
@@ -372,6 +397,15 @@ function fmtDate(iso){ return new Date(iso).toLocaleDateString('en-US',{weekday:
 function fmtTime(iso){ return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
 function fmtDateTime(iso){ return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
 
+function escapeHtml(s){
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/** Safe for double-quoted onclick="fn(...)" — avoids nested " breaking the attribute */
+function encAttr(v){
+  return encodeURIComponent(JSON.stringify(v));
+}
+
 function updateScheduleChip(){
   const chip = document.getElementById('sched-chip');
   if(!chip) return;
@@ -384,16 +418,149 @@ function updateScheduleChip(){
   chip.className = 'chip '+(hrs<6?'chip-danger':hrs<24?'chip-warn':'chip-ok');
 }
 
-// ─── TREE BUILDER ───────────────────────────────────────────────────────────
-function buildTree(items){
-  const t={};
+// ─── ORDERED GROUPS (category › subcategory › items) ─────────────────────────
+const EK1 = (l1)=>'1:'+l1;
+const EK2 = (l1,l2)=>'2:'+l1+'||'+l2;
+function groupKey(l1,l2){ return (l1||'Other')+'||'+(l2||'General'); }
+
+function discoverGroups(items){
+  const map={};
   items.forEach(i=>{
     const l1=i.cat_l1||'Other', l2=i.cat_l2||'General';
-    if(!t[l1]) t[l1]={};
-    if(!t[l1][l2]) t[l1][l2]=[];
-    t[l1][l2].push(i);
+    if(!map[l1]) map[l1]={};
+    if(!map[l1][l2]) map[l1][l2]=[];
+    map[l1][l2].push(i);
   });
-  return t;
+  return map;
+}
+
+function minSortInBucket(bucketItems){
+  let m=Infinity;
+  bucketItems.forEach(i=>{
+    const s=parseFloat(i.sort_order);
+    if(Number.isFinite(s)&&s<m) m=s;
+  });
+  return m===Infinity?0:m;
+}
+
+function loadLayout(){
+  const v=ls.get('layout');
+  if(v&&typeof v==='object') return {catOrder:v.catOrder||[],subOrder:v.subOrder||{},groupItemOrder:v.groupItemOrder||{}};
+  return {catOrder:[],subOrder:{},groupItemOrder:{}};
+}
+
+function saveLayout(L){ ls.set('layout',L); }
+
+function ensureLayoutFromItems(items){
+  const map=discoverGroups(items);
+  const L0=loadLayout();
+  const allL1=Object.keys(map);
+  const defaultL1=allL1.slice().sort((a,b)=>
+    minSortInBucket(Object.values(map[a]).flat())-minSortInBucket(Object.values(map[b]).flat())||String(a).localeCompare(String(b))
+  );
+  const seen1=new Set();
+  const catOrder=[];
+  (L0.catOrder||[]).forEach(x=>{ if(map[x]&&!seen1.has(x)){ seen1.add(x); catOrder.push(x); }});
+  defaultL1.forEach(x=>{ if(!seen1.has(x)){ seen1.add(x); catOrder.push(x); }});
+
+  const subOrder={...L0.subOrder};
+  catOrder.forEach(l1=>{
+    const subs=Object.keys(map[l1]||{});
+    const defSub=subs.slice().sort((a,b)=>
+      minSortInBucket(map[l1][a])-minSortInBucket(map[l1][b])||String(a).localeCompare(String(b))
+    );
+    const seen2=new Set();
+    const merged=[];
+    (subOrder[l1]||[]).forEach(x=>{ if(map[l1]&&map[l1][x]&&!seen2.has(x)){ seen2.add(x); merged.push(x); }});
+    defSub.forEach(x=>{ if(!seen2.has(x)){ seen2.add(x); merged.push(x); }});
+    subOrder[l1]=merged;
+  });
+
+  const groupItemOrder={...L0.groupItemOrder};
+  catOrder.forEach(l1=>{
+    (subOrder[l1]||[]).forEach(l2=>{
+      if(!map[l1]||!map[l1][l2]) return;
+      const bucket=map[l1][l2];
+      const k=groupKey(l1,l2);
+      const defIds=bucket.slice().sort((a,b)=>{
+        const sa=parseFloat(a.sort_order),sb=parseFloat(b.sort_order);
+        if(Number.isFinite(sa)&&Number.isFinite(sb)&&sa!==sb) return sa-sb;
+        return String(a.name||'').localeCompare(String(b.name||''));
+      }).map(i=>i.id);
+      const seen3=new Set();
+      const mergedIds=[];
+      (groupItemOrder[k]||[]).forEach(id=>{
+        if(bucket.some(i=>i.id===id)&&!seen3.has(id)){ seen3.add(id); mergedIds.push(id); }
+      });
+      defIds.forEach(id=>{ if(!seen3.has(id)){ seen3.add(id); mergedIds.push(id); }});
+      groupItemOrder[k]=mergedIds;
+    });
+  });
+
+  const next={catOrder,subOrder,groupItemOrder};
+  if(JSON.stringify(next)!==JSON.stringify(L0)) saveLayout(next);
+  return next;
+}
+
+function getOrderedGroups(items){
+  const layout=ensureLayoutFromItems(items);
+  const map=discoverGroups(items);
+  const byId={};
+  items.forEach(i=>{ byId[i.id]=i; });
+  return layout.catOrder.filter(l1=>map[l1]).map(l1=>({
+    l1,
+    subs:(layout.subOrder[l1]||[]).filter(l2=>map[l1]&&map[l1][l2]).map(l2=>{
+      const ids=layout.groupItemOrder[groupKey(l1,l2)]||[];
+      const rowItems=ids.map(id=>byId[id]).filter(Boolean);
+      return {l2,items:rowItems};
+    }).filter(s=>s.items.length)
+  })).filter(g=>g.subs.length);
+}
+
+function flattenWalkItems(groups){
+  const flat=[];
+  groups.forEach(g=>g.subs.forEach(s=>s.items.forEach(i=>flat.push(i))));
+  return flat;
+}
+
+function moveL1(l1,dir){
+  ensureLayoutFromItems(S.items);
+  const L=loadLayout();
+  const arr=[...L.catOrder];
+  const i=arr.indexOf(l1);
+  const j=i+dir;
+  if(i<0||j<0||j>=arr.length) return;
+  [arr[i],arr[j]]=[arr[j],arr[i]];
+  L.catOrder=arr;
+  saveLayout(L);
+  render();
+}
+
+function moveL2(l1,l2,dir){
+  ensureLayoutFromItems(S.items);
+  const L=loadLayout();
+  const arr=[...(L.subOrder[l1]||[])];
+  const i=arr.indexOf(l2);
+  const j=i+dir;
+  if(i<0||j<0||j>=arr.length) return;
+  [arr[i],arr[j]]=[arr[j],arr[i]];
+  L.subOrder[l1]=arr;
+  saveLayout(L);
+  render();
+}
+
+function moveItemInGroup(l1,l2,id,dir){
+  ensureLayoutFromItems(S.items);
+  const L=loadLayout();
+  const k=groupKey(l1,l2);
+  const arr=[...(L.groupItemOrder[k]||[])];
+  const i=arr.indexOf(id);
+  const j=i+dir;
+  if(i<0||j<0||j>=arr.length) return;
+  [arr[i],arr[j]]=[arr[j],arr[i]];
+  L.groupItemOrder[k]=arr;
+  saveLayout(L);
+  render();
 }
 
 // ─── USAGE ANALYTICS ────────────────────────────────────────────────────────
@@ -429,11 +596,15 @@ function computeUsage(){
 function computeOrder(){
   if(!S.sessions.length) return [];
   const last = S.sessions[0]; // sessions sorted desc
-  return S.items.map(item=>{
+  const ord=S.items.map(item=>{
     const onHand = parseFloat(last.counts[item.id])||0;
     const toOrder = Math.ceil(Math.max(0, item.par - onHand));
     return {...item,onHand,toOrder};
   }).filter(i=>i.toOrder>0);
+  const orderIds=flattenWalkItems(getOrderedGroups(S.items)).map(i=>i.id);
+  const rank={};
+  orderIds.forEach((id,ix)=>{ rank[id]=ix; });
+  return ord.sort((a,b)=>(rank[a.id]??1e9)-(rank[b.id]??1e9));
 }
 
 // ─── RENDER ─────────────────────────────────────────────────────────────────
@@ -454,11 +625,74 @@ function svgChevron(open){
 }
 
 // ── COUNT TAB ────────────────────────────────────────────────────────────────
+function setCountView(mode){
+  S.countView=mode;
+  if(mode==='walk'){
+    const flat=flattenWalkItems(getOrderedGroups(S.items));
+    if(!flat.length){ S.countView='list'; render(); return; }
+    S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
+  }
+  render();
+  if(mode==='walk') queueWalkFocus();
+}
+
+function enterWalkCount(clearDraft){
+  if(clearDraft){ S.draft={}; S.walkIndex=0; }
+  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  if(!flat.length){ alert('No items to count.'); return; }
+  S.countView='walk';
+  S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
+  render();
+  queueWalkFocus();
+}
+
+function startNewCountWalk(){
+  S.historyMode=false;
+  S.editSessionId=null;
+  S.editDraft={};
+  enterWalkCount(true);
+}
+
+function queueWalkFocus(){
+  requestAnimationFrame(()=>{
+    const q=document.getElementById('walk-qty');
+    if(q){ q.focus(); q.select(); }
+  });
+}
+
+function walkFlat(){ return flattenWalkItems(getOrderedGroups(S.items)); }
+
+function walkGo(delta){
+  const f=walkFlat();
+  if(!f.length) return;
+  S.walkIndex=Math.max(0,Math.min(f.length-1,S.walkIndex+delta));
+  render();
+  queueWalkFocus();
+}
+
+function walkPickL1(l1){
+  const f=walkFlat();
+  const i=f.findIndex(it=>(it.cat_l1||'Other')===l1);
+  if(i>=0){ S.walkIndex=i; render(); queueWalkFocus(); }
+}
+
+function walkPickL2(l2){
+  const f=walkFlat();
+  const sels=document.querySelectorAll('.walk-selects select');
+  const l1=sels[0]?sels[0].value:(f[S.walkIndex]?(f[S.walkIndex].cat_l1||'Other'):'Other');
+  const i=f.findIndex(it=>(it.cat_l1||'Other')===l1&&(it.cat_l2||'General')===l2);
+  if(i>=0){ S.walkIndex=i; render(); queueWalkFocus(); }
+}
+
+function walkQtyKey(ev){
+  if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); walkGo(1); }
+}
+
 function renderCount(){
   const draft=S.draft, items=S.items;
   const counted=items.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
   const pct=items.length?Math.round(counted/items.length*100):0;
-  const tree=buildTree(items);
+  const groups=getOrderedGroups(items);
   const lastSess = S.sessions[0];
   let h=`
   <div class="pg-hdr">
@@ -468,36 +702,93 @@ function renderCount(){
       <button class="btn btn-secondary btn-sm" onclick="toggleHistory()">History</button>
     </div>
   </div>
+  <div class="seg-row">
+    <button type="button" class="seg${S.countView==='list'?' on':''}" onclick="setCountView('list')">Full list</button>
+    <button type="button" class="seg${S.countView==='walk'?' on':''}" onclick="enterWalkCount(false)">Walk-through</button>
+  </div>
   <div class="prog"><div class="prog-fill${pct===100?' done':''}" id="prog-fill" style="width:${pct}%"></div></div>`;
 
   if(S.syncError) h+=`<div class="banner banner-err" style="margin-bottom:10px">⚠ ${S.syncError} — data saved locally.</div>`;
 
-  Object.entries(tree).forEach(([l1,subs])=>{
-    Object.entries(subs).forEach(([l2,its])=>{
-      const key=l1+'/'+l2;
-      const isOpen=S.expanded[key]!==false;
-      const cc=its.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
-      h+=`<div class="card">
-        <button class="card-hdr" onclick="toggleCat('${key}')">
-          <div class="cat-labels">${svgChevron(isOpen)}<span class="cat-l1">${l1}</span><span style="color:#d1d5db;font-size:11px">›</span><span class="cat-l2">${l2}</span></div>
-          <span class="badge${cc===its.length?' done':''}">${cc}/${its.length}</span>
-        </button>`;
-      if(isOpen) its.forEach(item=>{
-        const val=draft[item.id]!==undefined?draft[item.id]:'';
-        h+=`<div class="item-row">
-          <div>
-            <div class="item-name">${item.name}</div>
-            <div class="item-meta">Par: <b style="color:#e85d04">${item.par}</b> ${item.unit} · <span class="mono">${item.code}</span></div>
-          </div>
-          <div style="display:flex;align-items:center">
-            <input class="qinput" type="number" min="0" step="0.5" value="${val}" placeholder="0" oninput="setDraft('${item.id}',this.value)">
-            <span class="ulbl">${item.unit}</span>
-          </div>
-        </div>`;
+  if(S.countView==='walk'){
+    const flat=flattenWalkItems(groups);
+    if(!flat.length){
+      h+=`<div class="empty">No items yet. Add items in Setup.</div>`;
+    }else{
+      S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
+      const item=flat[S.walkIndex];
+      const val=draft[item.id]!==undefined?draft[item.id]:'';
+      const l1=item.cat_l1||'Other', l2=item.cat_l2||'General';
+      const l1Opts=groups.map(g=>`<option value="${escapeHtml(g.l1)}"${g.l1===l1?' selected':''}>${escapeHtml(g.l1)}</option>`).join('');
+      const g1=groups.find(x=>x.l1===l1);
+      const l2Opts=(g1?g1.subs:[]).map(s=>`<option value="${escapeHtml(s.l2)}"${s.l2===l2?' selected':''}>${escapeHtml(s.l2)}</option>`).join('');
+      h+=`<div class="walk-bar">
+        <div class="walk-selects">
+          <select aria-label="Category" onchange="walkPickL1(this.value)">${l1Opts}</select>
+          <select aria-label="Subcategory" onchange="walkPickL2(this.value)">${l2Opts}</select>
+        </div>
+        <div class="walk-pos" id="walk-pos">Item ${S.walkIndex+1} of ${flat.length}</div>
+      </div>
+      <div class="card walk-card">
+        <div class="walk-breadcrumb">${escapeHtml(l1)} › ${escapeHtml(l2)}</div>
+        <div class="walk-name">${escapeHtml(item.name)}</div>
+        <div class="walk-meta">Par <b style="color:#e85d04">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
+        <input class="walk-qty" id="walk-qty" type="number" min="0" step="0.5" value="${val}" placeholder="0" inputmode="decimal"
+          oninput="setDraft('${item.id}',this.value)" onkeydown="walkQtyKey(event)">
+        <div class="ulbl" style="margin-top:-8px;margin-bottom:8px">${escapeHtml(item.unit)}</div>
+        <div class="walk-nav">
+          <button type="button" class="btn btn-secondary" onclick="walkGo(-1)" ${S.walkIndex<=0?'disabled':''}>Previous</button>
+          <button type="button" class="btn btn-primary" onclick="walkGo(1)" ${S.walkIndex>=flat.length-1?'disabled':''}>Next</button>
+        </div>
+      </div>`;
+    }
+  }else{
+    groups.forEach(g=>{
+      const l1=g.l1;
+      const k1=EK1(l1);
+      const open1=S.expanded[k1]!==false;
+      let tot=0, done=0;
+      g.subs.forEach(s=>{
+        s.items.forEach(i=>{ tot++; if(draft[i.id]!==undefined&&draft[i.id]!=='') done++; });
       });
+      h+=`<div class="l1-block">
+        <button type="button" class="l1-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k1)}')))">
+          <div class="l1-title">${svgChevron(open1)}<span>${escapeHtml(l1)}</span></div>
+          <span class="badge${done===tot&&tot?' done':''}">${done}/${tot}</span>
+        </button>`;
+      if(open1){
+        h+=`<div class="l1-inner">`;
+        g.subs.forEach(s=>{
+          const l2=s.l2;
+          const k2=EK2(l1,l2);
+          const open2=S.expanded[k2]!==false;
+          const its=s.items;
+          const cc=its.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
+          h+=`<div class="card" style="margin-bottom:8px">
+            <button type="button" class="card-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k2)}')))">
+              <div class="cat-labels">${svgChevron(open2)}<span class="cat-l2">${escapeHtml(l2)}</span></div>
+              <span class="badge${cc===its.length?' done':''}">${cc}/${its.length}</span>
+            </button>`;
+          if(open2) its.forEach(item=>{
+            const val=draft[item.id]!==undefined?draft[item.id]:'';
+            h+=`<div class="item-row">
+              <div>
+                <div class="item-name">${escapeHtml(item.name)}</div>
+                <div class="item-meta">Par: <b style="color:#e85d04">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
+              </div>
+              <div style="display:flex;align-items:center">
+                <input class="qinput" type="number" min="0" step="0.5" value="${val}" placeholder="0" oninput="setDraft('${item.id}',this.value)">
+                <span class="ulbl">${escapeHtml(item.unit)}</span>
+              </div>
+            </div>`;
+          });
+          h+='</div>';
+        });
+        h+=`</div>`;
+      }
       h+='</div>';
     });
-  });
+  }
 
   h+=`<div class="sticky-footer">
     <span style="font-size:12px;color:#9ca3af">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</span>
@@ -513,7 +804,10 @@ function renderHistory(){
   let h=`
   <div class="pg-hdr">
     <div><div class="pg-title">Count History</div><div class="pg-sub">${S.sessions.length} recorded session${S.sessions.length!==1?'s':''}</div></div>
-    <button class="btn btn-secondary btn-sm" onclick="toggleHistory()">+ New Count</button>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-secondary btn-sm" onclick="historyBack()">Back</button>
+      <button class="btn btn-primary btn-sm" onclick="startNewCountWalk()">+ New Count</button>
+    </div>
   </div>`;
   if(!S.sessions.length) return h+`<div class="empty">No count history yet. Take your first inventory to get started.</div>`;
   if(S.editSessionId){
@@ -541,37 +835,51 @@ function renderEditSession(sessionId){
   const sess = S.sessions.find(s=>s.id===sessionId);
   if(!sess) return '<div class="empty">Session not found.</div>';
   const draft = S.editDraft;
-  const tree = buildTree(S.items);
+  const groups = getOrderedGroups(S.items);
   let h=`
   <div class="banner banner-info" style="margin-bottom:12px">
     <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
     Editing: ${fmtDateTime(sess.counted_at)}
   </div>`;
-  Object.entries(tree).forEach(([l1,subs])=>{
-    Object.entries(subs).forEach(([l2,its])=>{
-      const key='edit/'+l1+'/'+l2;
-      const isOpen=S.expanded[key]!==false;
-      h+=`<div class="card">
-        <button class="card-hdr" onclick="toggleCat('${key}')">
-          <div class="cat-labels">${svgChevron(isOpen)}<span class="cat-l1">${l1}</span><span style="color:#d1d5db;font-size:11px">›</span><span class="cat-l2">${l2}</span></div>
-        </button>`;
-      if(isOpen) its.forEach(item=>{
-        const orig = sess.counts[item.id]!==undefined ? sess.counts[item.id] : '';
-        const val = draft[item.id]!==undefined ? draft[item.id] : orig;
-        const changed = draft[item.id]!==undefined && String(draft[item.id])!==String(orig);
-        h+=`<div class="item-row">
-          <div>
-            <div class="item-name">${item.name}${changed?'<span style="color:#e85d04;font-size:10px;margin-left:5px">●</span>':''}</div>
-            <div class="item-meta">Par: ${item.par} ${item.unit}</div>
-          </div>
-          <div style="display:flex;align-items:center">
-            <input class="qinput" type="number" min="0" step="0.5" value="${val}" placeholder="0" oninput="setEditDraft('${item.id}',this.value)">
-            <span class="ulbl">${item.unit}</span>
-          </div>
-        </div>`;
+  groups.forEach(g=>{
+    const l1=g.l1;
+    const k1='edit/'+EK1(l1);
+    const open1=S.expanded[k1]!==false;
+    h+=`<div class="l1-block">
+      <button type="button" class="l1-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k1)}')))">
+        <div class="l1-title">${svgChevron(open1)}<span>${escapeHtml(l1)}</span></div>
+      </button>`;
+    if(open1){
+      h+=`<div class="l1-inner">`;
+      g.subs.forEach(s=>{
+        const l2=s.l2;
+        const k2='edit/'+EK2(l1,l2);
+        const open2=S.expanded[k2]!==false;
+        const its=s.items;
+        h+=`<div class="card" style="margin-bottom:8px">
+          <button type="button" class="card-hdr" onclick="toggleCat(JSON.parse(decodeURIComponent('${encAttr(k2)}')))">
+            <div class="cat-labels">${svgChevron(open2)}<span class="cat-l2">${escapeHtml(l2)}</span></div>
+          </button>`;
+        if(open2) its.forEach(item=>{
+          const orig = sess.counts[item.id]!==undefined ? sess.counts[item.id] : '';
+          const val = draft[item.id]!==undefined ? draft[item.id] : orig;
+          const changed = draft[item.id]!==undefined && String(draft[item.id])!==String(orig);
+          h+=`<div class="item-row">
+            <div>
+              <div class="item-name">${escapeHtml(item.name)}${changed?'<span style="color:#e85d04;font-size:10px;margin-left:5px">●</span>':''}</div>
+              <div class="item-meta">Par: ${item.par} ${escapeHtml(item.unit)}</div>
+            </div>
+            <div style="display:flex;align-items:center">
+              <input class="qinput" type="number" min="0" step="0.5" value="${val}" placeholder="0" oninput="setEditDraft('${item.id}',this.value)">
+              <span class="ulbl">${escapeHtml(item.unit)}</span>
+            </div>
+          </div>`;
+        });
+        h+='</div>';
       });
-      h+='</div>';
-    });
+      h+=`</div>`;
+    }
+    h+='</div>';
   });
   h+=`<div class="sticky-footer">
     <button class="btn btn-danger btn-sm" onclick="deleteSession('${sessionId}')">Delete</button>
@@ -814,7 +1122,6 @@ function renderSetup(){
     </div>`;
   }
 
-  const tree = buildTree(S.items);
   let h=`
   <div class="pg-hdr">
     <div><div class="pg-title">Item Setup</div><div class="pg-sub">${S.items.length} items · ${S.sessions.length} sessions</div></div>
@@ -847,14 +1154,43 @@ function renderSetup(){
     ${S.testResults?renderTestResults():''}
   </div>`;
 
-  Object.entries(tree).forEach(([l1,subs])=>{
-    Object.entries(subs).forEach(([l2,its])=>{
-      h+=`<div class="card"><div class="card-hdr-static"><div class="cat-labels"><span class="cat-l1">${l1}</span><span style="color:#d1d5db;font-size:11px">›</span><span class="cat-l2">${l2}</span></div></div>`;
-      its.forEach(item=>{
+  h+=`<div class="banner banner-info" style="margin-bottom:10px;font-size:12px">
+    Use ↑ ↓ to set the order categories, subcategories, and items appear in Count and here. Order is saved on this device.
+  </div>`;
+
+  const groups=getOrderedGroups(S.items);
+  groups.forEach(g=>{
+    const l1=g.l1;
+    h+=`<div class="l1-block">
+      <div class="l1-hdr" style="cursor:default;margin-bottom:6px">
+        <div class="l1-title"><span class="cat-l1">${escapeHtml(l1)}</span></div>
+        <div class="setup-l1-tools">
+          <div class="reorder-btns" aria-label="Reorder category">
+            <button type="button" onclick="moveL1(JSON.parse(decodeURIComponent('${encAttr(l1)}')),-1)">↑</button>
+            <button type="button" onclick="moveL1(JSON.parse(decodeURIComponent('${encAttr(l1)}')),1)">↓</button>
+          </div>
+        </div>
+      </div>
+      <div class="l1-inner">`;
+    g.subs.forEach(s=>{
+      const l2=s.l2;
+      h+=`<div class="card" style="margin-bottom:8px">
+        <div class="card-hdr-static" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="cat-labels"><span class="cat-l2">${escapeHtml(l2)}</span></div>
+          <div class="reorder-btns" aria-label="Reorder subcategory">
+            <button type="button" onclick="moveL2(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),-1)">↑</button>
+            <button type="button" onclick="moveL2(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),1)">↓</button>
+          </div>
+        </div>`;
+      s.items.forEach(item=>{
         h+=`<div class="item-row">
+          <div class="reorder-btns" aria-label="Reorder item">
+            <button type="button" onclick="moveItemInGroup(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),JSON.parse(decodeURIComponent('${encAttr(item.id)}')),-1)">↑</button>
+            <button type="button" onclick="moveItemInGroup(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),JSON.parse(decodeURIComponent('${encAttr(item.id)}')),1)">↓</button>
+          </div>
           <div style="flex:1;min-width:0">
-            <div class="item-name">${item.name}</div>
-            <div class="item-meta">Par: ${item.par} ${item.unit} · <span class="mono">${item.code}</span></div>
+            <div class="item-name">${escapeHtml(item.name)}</div>
+            <div class="item-meta">Par: ${item.par} ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
             <button class="btn btn-secondary btn-sm" onclick="startEdit('${item.id}')">
@@ -868,6 +1204,7 @@ function renderSetup(){
       });
       h+='</div>';
     });
+    h+=`</div></div>`;
   });
   return h;
 }
@@ -892,6 +1229,7 @@ function fg(label,field,val,type,ph,suggestions){
 // ─── EVENT HANDLERS ──────────────────────────────────────────────────────────
 function setTab(t){
   S.tab=t; S.historyMode=false; S.editSessionId=null;
+  if(t!=='count'){ S.countView='list'; }
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
   const tb=document.getElementById('t-'+t); if(tb) tb.classList.add('on');
   render();
@@ -914,7 +1252,18 @@ function setDraft(id,val){
 
 function setEditDraft(id,val){ S.editDraft[id]=val; }
 
-function toggleHistory(){ S.historyMode=!S.historyMode; S.editSessionId=null; S.editDraft={}; render(); }
+function toggleHistory(){
+  S.historyMode=!S.historyMode;
+  S.editSessionId=null;
+  S.editDraft={};
+  if(S.historyMode) S.countView='list';
+  render();
+}
+
+function historyBack(){
+  if(S.editSessionId){ cancelEditSession(); return; }
+  toggleHistory();
+}
 
 function startEditSession(id){
   S.editSessionId=id;
@@ -974,6 +1323,7 @@ async function completeInventory(){
     ls.set('sessions',S.sessions);
     setSyncOk();
     S.draft={};
+    S.countView='list';
     showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
     render();
   }catch(e){
@@ -981,6 +1331,7 @@ async function completeInventory(){
     ls.set('sessions',S.sessions);
     setSyncErr(e.message);
     S.draft={};
+    S.countView='list';
     render();
   }
 }
@@ -1047,11 +1398,12 @@ function updateForm(f,v){ if(!S.formData) S.formData={}; S.formData[f]=v; }
 async function saveItem(){
   const f=S.formData||{};
   if(!f.name||!f.cat_l1||!f.par){ alert('Name, Category Level 1, and Par Level are required.'); return; }
+  const existing=S.formView==='edit'?S.items.find(i=>i.id===S.editItemId):null;
   const item={
     id: S.formView==='add'?Date.now().toString():S.editItemId,
     name:f.name, cat_l1:f.cat_l1, cat_l2:f.cat_l2||'',
     par:parseFloat(f.par)||1, unit:f.unit||'cs', code:f.code||'',
-    sort_order: S.items.length+1
+    sort_order: existing!=null&&Number.isFinite(parseFloat(existing.sort_order))?parseFloat(existing.sort_order):S.items.length+1
   };
   try{
     setSyncing(true);
@@ -1196,16 +1548,8 @@ function loadFromCache(){
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function init(){
-  // Init expanded state
-  const tree = buildTree(SEED_ITEMS);
-  Object.entries(tree).forEach(([l1,subs])=>{
-    Object.keys(subs).forEach(l2=>{ S.expanded[l1+'/'+l2]=true; });
-  });
-
-  // Countdown chip updater
   setInterval(updateScheduleChip, 30000);
 
-  // PWA events
   window.addEventListener('beforeinstallprompt',e=>{
     S.installPrompt=e; e.preventDefault();
     if(S.tab==='setup') render();
@@ -1215,8 +1559,15 @@ async function init(){
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
   }
 
-  // Load data
   await loadFromDB();
+  getOrderedGroups(S.items).forEach(g=>{
+    const k1=EK1(g.l1);
+    if(S.expanded[k1]===undefined) S.expanded[k1]=true;
+    g.subs.forEach(s=>{
+      const k2=EK2(g.l1,s.l2);
+      if(S.expanded[k2]===undefined) S.expanded[k2]=true;
+    });
+  });
   document.getElementById('loading-overlay').style.display='none';
   render();
 }
