@@ -134,14 +134,15 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .ord-card{background:#fff;border:1px solid var(--ck-line);border-radius:10px;padding:10px;margin-bottom:7px}
 .ord-top{display:flex;justify-content:space-between;align-items:flex-start}
 .ord-card.ord-acked{border-color:#86efac;background:linear-gradient(180deg,#f0fdf4 0%,#fff 100%)}
-.order-list-bc-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6}
-.order-list-bc{flex:1;min-width:0;text-align:left}
-.order-list-bc svg{max-width:100%}
-.order-rec-qty-wrap{margin-bottom:8px}
-.order-rec-qty{font-size:30px;font-weight:800;font-family:'SF Mono',monospace;color:#111;line-height:1}
-.order-rec-qty-lbl{font-size:11px;color:#4b5563;margin-top:4px;font-weight:600}
-.order-walk-qty-bc{margin:10px 0 8px;text-align:center}
-.order-walk-qty-bc .order-rec-qty{font-size:36px}
+.order-list-bc-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6}
+.order-list-bc-bar{flex:1;min-width:0;text-align:left}
+.order-list-bc-bar svg{max-width:100%}
+.order-list-bc-qty{flex-shrink:0;text-align:center;padding:0 2px;min-width:64px;max-width:100px}
+.order-list-bc-qty .order-rec-qty{font-size:26px;font-weight:800;font-family:'SF Mono',monospace;color:#111;line-height:1}
+.order-list-bc-qty .order-rec-qty-lbl{font-size:9px;color:#4b5563;margin-top:3px;font-weight:600;line-height:1.2}
+.order-walk-bcs-row .order-list-bc-qty{min-width:72px;max-width:110px;padding:0 4px}
+.order-walk-bcs-row .order-list-bc-qty .order-rec-qty{font-size:30px}
+.order-walk-bcs-row .order-list-bc-qty .order-rec-qty-lbl{font-size:10px}
 .order-ack-btn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:140px;border-radius:10px;padding:10px 16px;font-family:inherit;cursor:pointer;border:2px solid var(--ck-line);background:#fafafa;color:#374151;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
 .order-ack-btn-list{flex-shrink:0;min-width:0;max-width:118px;padding:6px 10px;border-radius:8px;gap:1px;border-width:1.5px}
 .order-ack-btn-list .order-ack-title{font-size:11px;font-weight:800;letter-spacing:.02em;line-height:1.1}
@@ -360,6 +361,8 @@ const S = {
   staleCheckInFlight: false,
   /** When false, the count form is covered until "Start new count" is used */
   countFormActive: false,
+  /** Setup tab: show database status & tests (hidden by default) */
+  showDeveloperInfo: false,
 };
 
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
@@ -1620,13 +1623,13 @@ function renderOrder(){
       <div class="walk-breadcrumb">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
       <div class="walk-name">${escapeHtml(item.name)}</div>
       <div class="walk-meta">On hand <b>${item.onHand}</b> · Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
-      <div class="order-walk-qty-bc">
-        <div class="order-rec-qty">${item.toOrder}</div>
-        <div class="order-rec-qty-lbl">${escapeHtml(item.unit)} to order</div>
-      </div>
-      <div class="bc-wrap"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div></div>
-      <div style="display:flex;justify-content:center;margin:10px 0 2px">
-        <button type="button" class="order-ack-btn${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
+      <div class="order-list-bc-row order-walk-bcs-row">
+        <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div></div>
+        <div class="order-list-bc-qty">
+          <div class="order-rec-qty">${item.toOrder}</div>
+          <div class="order-rec-qty-lbl">${escapeHtml(item.unit)} to order</div>
+        </div>
+        <button type="button" class="order-ack-btn order-ack-btn-list${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
       </div>
       <div class="walk-nav" style="margin-top:10px">
         <button type="button" class="btn btn-secondary" onclick="orderWalkGo(-1)" ${S.orderWalkIndex<=0?'disabled':''}>Previous</button>
@@ -1645,12 +1648,10 @@ function renderOrder(){
         </div>
       </div>
       <div class="order-list-bc-row">
-        <div class="order-list-bc">
-          <div class="order-rec-qty-wrap">
-            <div class="order-rec-qty">${item.toOrder}</div>
-            <div class="order-rec-qty-lbl">${escapeHtml(item.unit)} to order</div>
-          </div>
-          <div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div>
+        <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div></div>
+        <div class="order-list-bc-qty">
+          <div class="order-rec-qty">${item.toOrder}</div>
+          <div class="order-rec-qty-lbl">${escapeHtml(item.unit)} to order</div>
         </div>
         <button type="button" class="order-ack-btn order-ack-btn-list${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
       </div>
@@ -1852,6 +1853,11 @@ function renderUsage(){
 }
 
 // ── SETUP TAB ────────────────────────────────────────────────────────────────
+function toggleDeveloperInfo(){
+  S.showDeveloperInfo=!S.showDeveloperInfo;
+  render();
+}
+
 function renderSetup(){
   if(S.formView==='add'||S.formView==='edit'){
     const f=S.formData||{};
@@ -1898,18 +1904,20 @@ function renderSetup(){
     <button class="btn btn-secondary btn-sm" onclick="installPWA()">Install</button>
   </div>`;
 
-  // DB Status
   h+=`<div class="form-card" style="margin-bottom:7px">
-    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:7px">Database Status</div>
-    <div class="test-row"><span>Supabase connection</span><span class="test-status ${S.dbReady?'t-pass':'t-fail'}">${S.dbReady?'Connected':'Error'}</span></div>
-    <div class="test-row"><span>Tables initialized</span><span class="test-status ${S.dbReady?'t-pass':'t-fail'}">${S.dbReady?'Ready':'Not found'}</span></div>
-    <div class="test-row"><span>Items in database</span><span class="test-status t-pass">${S.items.length}</span></div>
-    <div class="test-row"><span>Sync status</span><span class="test-status ${S.syncError?'t-fail':'t-pass'}">${S.syncError||'OK'}</span></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-secondary btn-sm" onclick="runTests()">Run Tests</button>
-      <button class="btn btn-secondary btn-sm" onclick="reloadData()">Refresh Data</button>
-    </div>
-    ${S.testResults?renderTestResults():''}
+    <button type="button" class="btn btn-secondary btn-sm" style="width:100%" onclick="toggleDeveloperInfo()" aria-expanded="${S.showDeveloperInfo?'true':'false'}">Developer Info</button>
+    ${S.showDeveloperInfo?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:7px">Database Status</div>
+      <div class="test-row"><span>Supabase connection</span><span class="test-status ${S.dbReady?'t-pass':'t-fail'}">${S.dbReady?'Connected':'Error'}</span></div>
+      <div class="test-row"><span>Tables initialized</span><span class="test-status ${S.dbReady?'t-pass':'t-fail'}">${S.dbReady?'Ready':'Not found'}</span></div>
+      <div class="test-row"><span>Items in database</span><span class="test-status t-pass">${S.items.length}</span></div>
+      <div class="test-row"><span>Sync status</span><span class="test-status ${S.syncError?'t-fail':'t-pass'}">${S.syncError||'OK'}</span></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-secondary btn-sm" onclick="runTests()">Run Tests</button>
+        <button class="btn btn-secondary btn-sm" onclick="reloadData()">Refresh Data</button>
+      </div>
+      ${S.testResults?renderTestResults():''}
+    </div>`:''}
   </div>`;
 
   h+=`<div class="banner banner-info" style="margin-bottom:7px;font-size:11px">
