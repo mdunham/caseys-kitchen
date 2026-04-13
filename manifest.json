@@ -1,6 +1,7 @@
 {
   "name": "Casey's Kitchen Inventory",
   "short_name": "CK Inventory",
+  "author": "Matthew Dunham <send_me_letters@hotmail.com>",
   "description": "Kitchen inventory management, truck ordering, and weekly usage tracking for Casey's",
   "start_url": "./index.html",
   "scope": "./",
@@ -27,6 +28,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "favicon.ico",
+      "sizes": "16x16 32x32 48x48",
+      "type": "image/x-icon",
+      "purpose": "any"
     }
   ]
 }

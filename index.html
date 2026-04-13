@@ -7,7 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="CK Inventory">
+<meta name="author" content="Matthew Dunham, send_me_letters@hotmail.com">
 <link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./favicon.ico" sizes="48x48" type="image/x-icon">
+<link rel="icon" href="./icon.svg" type="image/svg+xml" sizes="any">
 <link rel="apple-touch-icon" href="./icon.svg">
 <title>Casey's Kitchen</title>
 <style>
@@ -706,7 +709,7 @@ function escapeHtml(s){
 
 function stickyFooterCopyright(){
   const y=new Date().getFullYear();
-  return `<div class="sticky-footer-copy">© ${y} Matthew Dunham · <a href="mailto:send_me_letters@hotmail.com">Email Me</a></div>`;
+  return `<div class="sticky-footer-copy">© ${y} Matthew Dunham · <a href="mailto:send_me_letters@hotmail.com">send_me_letters@hotmail.com</a></div>`;
 }
 
 /** Safe for double-quoted onclick="fn(...)" — avoids nested " breaking the attribute */
@@ -1072,10 +1075,16 @@ function toggleOrderAck(itemId){
   if(!items.some(i=>i.id===itemId)) return;
   const sig=orderRecSig(items);
   const cur=getOrderAckFlags(items);
+  const wasAcked=!!cur[itemId];
   const next={...cur};
   if(next[itemId]) delete next[itemId];
   else next[itemId]=true;
   ls.set('orderAck',{sig,flags:next});
+  const markedScanned=!wasAcked&&!!next[itemId];
+  if(markedScanned&&S.tab==='order'&&S.orderView==='walk'){
+    const i=items.findIndex(x=>x.id===itemId);
+    if(i===S.orderWalkIndex&&i<items.length-1) S.orderWalkIndex=i+1;
+  }
   render();
 }
 

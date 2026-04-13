@@ -1,5 +1,5 @@
-const CACHE = 'ck-inventory-v1';
-const PRECACHE = ['./index.html', './manifest.json', './icon.svg'];
+const CACHE = 'ck-inventory-v2';
+const PRECACHE = ['./index.html', './manifest.json', './icon.svg', './favicon.ico'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
