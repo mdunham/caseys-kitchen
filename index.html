@@ -158,6 +158,9 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .order-sum-v{font-size:18px;font-weight:700;font-family:'SF Mono',monospace;color:var(--ck-red);line-height:1.1}
 .order-sum-l{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
 .order-sum-note{font-size:10px;color:#9ca3af;margin-top:8px;line-height:1.35}
+.order-hide-scanned-row{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:8px 10px;background:#fff;border:1px solid var(--ck-line);border-radius:8px;font-size:12px;color:#374151}
+.order-hide-scanned-row input{width:16px;height:16px;accent-color:var(--ck-red);flex-shrink:0}
+.order-hide-scanned-row label{cursor:pointer;user-select:none;line-height:1.3}
 .bc-wrap{margin-top:7px;padding-top:7px;border-top:1px solid #f3f4f6}
 .bc-wrap svg{max-width:100%}
 /* Countdown */
@@ -354,6 +357,8 @@ const S = {
   countView: 'list',
   walkIndex: 0,
   orderView: 'list',
+  /** Full list: when true, rows marked scanned are hidden from the list (default on) */
+  orderListHideScanned: true,
   orderWalkIndex: 0,
   lastRemoteFingerprint: null,
   staleDialogOpen: false,
@@ -1082,6 +1087,11 @@ function getOrderAckFlags(items){
   return {...st.flags};
 }
 
+function setOrderListHideScanned(v){
+  S.orderListHideScanned=!!v;
+  render();
+}
+
 function toggleOrderAck(itemId){
   const items=computeOrder();
   if(!items.some(i=>i.id===itemId)) return;
@@ -1610,6 +1620,13 @@ function renderOrder(){
     <div class="order-sum-note">Qty total sums every line’s “to order” amount (mixed units). Use line items + qty total + scanned count to match another device while scanning this order in.</div>
   </div>`;
 
+  if(S.orderView==='list'){
+    h+=`<div class="order-hide-scanned-row">
+      <input type="checkbox" id="order-hide-scanned"${S.orderListHideScanned?' checked':''} onchange="setOrderListHideScanned(this.checked)">
+      <label for="order-hide-scanned">Hide scanned items</label>
+    </div>`;
+  }
+
   if(S.orderView==='walk'){
     S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,orderItems.length-1));
     const item=orderItems[S.orderWalkIndex];
@@ -1637,7 +1654,11 @@ function renderOrder(){
       </div>
     </div>`;
   }else{
-    orderItems.forEach(item=>{
+    const listItems=S.orderListHideScanned?orderItems.filter(it=>!flags[it.id]):orderItems;
+    if(!listItems.length&&orderItems.length){
+      h+=`<div class="empty" style="padding:18px 12px;font-size:12px;line-height:1.45">Every recommended line is marked scanned, or nothing is left to show. Uncheck <strong>Hide scanned items</strong> above to see all lines again.</div>`;
+    }
+    listItems.forEach(item=>{
       const ack=!!flags[item.id];
       h+=`<div class="ord-card${ack?' ord-acked':''}">
       <div class="ord-top">
@@ -2129,6 +2150,11 @@ async function logOrder(){
   }
   const orderItems = computeOrder();
   if(!orderItems.length) return;
+  const ackFlags=getOrderAckFlags(orderItems);
+  const allScanned=orderItems.every(it=>!!ackFlags[it.id]);
+  if(!allScanned){
+    if(!confirm('Not all recommended items have been marked scanned. Do you still wish to save the order?')) return;
+  }
   const id = Date.now().toString();
   const orderedAt = new Date().toISOString();
   const sessionId = S.sessions[0]?.id;
