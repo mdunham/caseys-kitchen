@@ -36,6 +36,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sync-dot.ok{background:#22c55e}
 .sync-dot.err{background:#ef4444}
 .sync-dot.spin{background:#f59e0b;animation:pulse 1s infinite}
+/* In-flight progress strip (below header) */
+.progress-toast{flex-shrink:0;max-width:640px;margin:0 auto;width:100%;border-bottom:1px solid #fecdd3;background:linear-gradient(180deg,#fff5f5 0%,#fff 100%)}
+.progress-toast-inner{display:flex;align-items:center;justify-content:center;gap:10px;padding:8px 12px;font-size:13px;font-weight:600;color:var(--ck-red-dark)}
+.progress-toast-spin{width:16px;height:16px;border:2px solid #fecaca;border-top-color:var(--ck-red);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+.main.ck-busy button{pointer-events:none;opacity:.62;cursor:wait}
+.main.ck-busy button:disabled{opacity:.35}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 /* Main scroll */
 .main{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px;padding-bottom:64px;-webkit-overflow-scrolling:touch}
@@ -123,6 +129,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ord-top{display:flex;justify-content:space-between;align-items:flex-start}
 .ord-qty{text-align:right;flex-shrink:0;margin-left:12px}
 .ord-qty-n{color:var(--ck-red);font-size:22px;font-weight:700;font-family:'SF Mono',monospace;line-height:1}
+.ord-card.ord-acked{border-color:#86efac;background:linear-gradient(180deg,#f0fdf4 0%,#fff 100%)}
+.order-ack-row{display:flex;align-items:center;justify-content:center;margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6}
+.order-ack-btn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:140px;border-radius:10px;padding:10px 16px;font-family:inherit;cursor:pointer;border:2px solid var(--ck-line);background:#fafafa;color:#374151;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
+.order-ack-title{font-size:14px;font-weight:800;letter-spacing:.02em;line-height:1.15}
+.order-ack-sub{font-size:10px;font-weight:500;color:#9ca3af;line-height:1.2;text-align:center;max-width:160px}
+.order-ack-btn-pending{border-style:dashed;border-color:#d1d5db;background:#fff}
+.order-ack-btn.on{border-color:#16a34a;background:#ecfdf5;color:#14532d;box-shadow:inset 0 0 0 1px rgba(22,163,74,.15)}
+.order-ack-btn.on .order-ack-sub{color:#166534;font-weight:600}
+.order-sum-card{background:#fff;border:1px solid var(--ck-line);border-radius:10px;padding:10px 11px;margin-bottom:8px}
+.order-sum-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.order-sum-v{font-size:18px;font-weight:700;font-family:'SF Mono',monospace;color:var(--ck-red);line-height:1.1}
+.order-sum-l{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+.order-sum-note{font-size:10px;color:#9ca3af;margin-top:8px;line-height:1.35}
 .bc-wrap{margin-top:7px;padding-top:7px;border-top:1px solid #f3f4f6}
 .bc-wrap svg{max-width:100%}
 /* Countdown */
@@ -243,6 +262,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="sync-dot" class="sync-dot" title="Sync status"></div>
     </div>
   </div>
+  <div id="progress-toast" class="progress-toast" role="status" aria-live="polite" aria-atomic="true" style="display:none">
+    <div class="progress-toast-inner">
+      <div class="progress-toast-spin" aria-hidden="true"></div>
+      <span id="progress-toast-msg"></span>
+    </div>
+  </div>
   <div class="main" id="main"></div>
   <nav class="tabs">
     <button class="tab on" id="t-count" onclick="setTab('count')">
@@ -306,10 +331,14 @@ const S = {
   editDraft: {},
   formView: null, formData: null, editItemId: null,
   syncing: false, syncError: null, dbReady: false,
+  progressMessage: null,
+  progressOnly: false,
   installPrompt: null,
   testResults: null,
   countView: 'list',
   walkIndex: 0,
+  orderView: 'list',
+  orderWalkIndex: 0,
   lastRemoteFingerprint: null,
   staleDialogOpen: false,
   stalePollId: null,
@@ -448,13 +477,66 @@ const db = {
 };
 
 // ─── SYNC HELPERS ───────────────────────────────────────────────────────────
-function setSyncing(v){ S.syncing=v; S.syncError=null; updateSyncDot(); }
-function setSyncErr(msg){ S.syncing=false; S.syncError=msg; updateSyncDot(); }
-function setSyncOk(){ S.syncing=false; S.syncError=null; updateSyncDot(); }
+function isAppBusy(){ return S.syncing || S.progressOnly; }
+
+function updateProgressToast(){
+  const wrap=document.getElementById('progress-toast');
+  const msgEl=document.getElementById('progress-toast-msg');
+  const main=document.getElementById('main');
+  const show=isAppBusy()&&S.progressMessage;
+  if(wrap){
+    wrap.style.display=show?'block':'none';
+    if(msgEl&&S.progressMessage) msgEl.textContent=S.progressMessage;
+  }
+  if(main) main.classList.toggle('ck-busy',!!show);
+}
+
+/** Optional message shows in the progress strip so users do not double-submit */
+function setSyncing(v, msg){
+  S.syncing=!!v;
+  S.syncError=null;
+  if(v){
+    S.progressOnly=false;
+    S.progressMessage=msg||'Saving…';
+  }else{
+    S.progressMessage=null;
+    S.progressOnly=false;
+  }
+  updateSyncDot();
+  updateProgressToast();
+}
+
+function setSyncErr(msg){
+  S.syncing=false;
+  S.syncError=msg;
+  S.progressMessage=null;
+  S.progressOnly=false;
+  updateSyncDot();
+  updateProgressToast();
+}
+
+function setSyncOk(){
+  S.syncing=false;
+  S.syncError=null;
+  S.progressMessage=null;
+  S.progressOnly=false;
+  updateSyncDot();
+  updateProgressToast();
+}
+
+/** Progress UI without treating as cloud “sync” (e.g. local tests). */
+function setProgressOnly(on, msg){
+  S.progressOnly=!!on;
+  S.progressMessage=on?(msg||'Working…'):null;
+  if(on) S.syncing=false;
+  updateSyncDot();
+  updateProgressToast();
+}
+
 function updateSyncDot(){
   const d=document.getElementById('sync-dot');
   if(!d) return;
-  if(S.syncing){ d.className='sync-dot spin'; d.title='Syncing…'; }
+  if(S.syncing||S.progressOnly){ d.className='sync-dot spin'; d.title=S.syncing?'Syncing…':'Working…'; }
   else if(S.syncError){ d.className='sync-dot err'; d.title='Sync error: '+S.syncError; }
   else { d.className='sync-dot ok'; d.title='Synced'; }
 }
@@ -507,12 +589,12 @@ async function noteServerSynced(){
 
 function startStaleWatcher(){
   if(S.stalePollId){ clearInterval(S.stalePollId); S.stalePollId=null; }
-  if(!sb || !S.dbReady) return;
-  S.stalePollId=setInterval(()=>{ void checkRemoteStale(); },35000);
+  /* Stale UI is only evaluated after a saved count, saved order, or new item (see checkStaleIfOutOfSync). */
 }
 
-async function checkRemoteStale(){
-  if(!sb || !S.dbReady || S.staleDialogOpen || S.syncing || S.staleCheckInFlight) return;
+/** Compare server fingerprint to our last snapshot; open dialog if another session changed the DB. Only call after count save, order save, or adding an item. */
+async function checkStaleIfOutOfSync(){
+  if(!sb || !S.dbReady || S.staleDialogOpen || isAppBusy() || S.staleCheckInFlight) return;
   S.staleCheckInFlight=true;
   try{
     const remote = await fetchRemoteFingerprint();
@@ -538,12 +620,14 @@ function hideStaleSyncOverlay(){
 
 async function staleSyncRefresh(){
   hideStaleSyncOverlay();
-  document.getElementById('loading-overlay').style.display='flex';
-  document.getElementById('loading-msg').textContent='Refreshing data…';
+  const ov=document.getElementById('loading-overlay');
+  const lm=document.getElementById('loading-msg');
+  ov.style.display='flex';
+  lm.textContent='Refreshing data…';
   try{
     await loadFromDB();
   }finally{
-    document.getElementById('loading-overlay').style.display='none';
+    ov.style.display='none';
   }
   render();
 }
@@ -566,9 +650,15 @@ async function submitStorePin(){
   if(errEl) errEl.textContent='';
   try{ sessionStorage.setItem(SS_PIN_KEY,'1'); }catch{}
   document.getElementById('pin-overlay').style.display='none';
-  document.getElementById('loading-overlay').style.display='flex';
-  document.getElementById('loading-msg').textContent='Connecting to database…';
-  await finishBoot();
+  const ov=document.getElementById('loading-overlay');
+  const lm=document.getElementById('loading-msg');
+  ov.style.display='flex';
+  lm.textContent='Connecting to database…';
+  try{
+    await finishBoot();
+  }finally{
+    ov.style.display='none';
+  }
 }
 
 // ─── SCHEDULE HELPERS ───────────────────────────────────────────────────────
@@ -957,6 +1047,58 @@ function computeOrder(){
   return ord.sort((a,b)=>(rank[a.id]??1e9)-(rank[b.id]??1e9));
 }
 
+// ─── ORDER TAB HELPERS (ack toggles + list/walk) ─────────────────────────────
+function orderRecSig(items){
+  return items.map(i=>i.id+':'+i.toOrder).join(',');
+}
+
+function getOrderAckFlags(items){
+  const sig=orderRecSig(items);
+  const st=ls.get('orderAck');
+  if(!st||st.sig!==sig||typeof st.flags!=='object') return {};
+  return {...st.flags};
+}
+
+function toggleOrderAck(itemId){
+  const items=computeOrder();
+  if(!items.some(i=>i.id===itemId)) return;
+  const sig=orderRecSig(items);
+  const cur=getOrderAckFlags(items);
+  const next={...cur};
+  if(next[itemId]) delete next[itemId];
+  else next[itemId]=true;
+  ls.set('orderAck',{sig,flags:next});
+  render();
+}
+
+function setOrderView(mode){
+  S.orderView=mode;
+  const oi=computeOrder();
+  if(mode==='walk'){
+    if(!oi.length){ S.orderView='list'; render(); return; }
+    S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,oi.length-1));
+  }
+  render();
+  if(mode==='walk') setTimeout(drawBarcodes,60);
+}
+
+function orderWalkGo(delta){
+  const oi=computeOrder();
+  if(!oi.length) return;
+  S.orderWalkIndex=Math.max(0,Math.min(oi.length-1,S.orderWalkIndex+delta));
+  render();
+  setTimeout(drawBarcodes,60);
+}
+
+function orderWalkPick(ix){
+  const oi=computeOrder();
+  const n=parseInt(ix,10);
+  if(!Number.isFinite(n)||n<0||n>=oi.length) return;
+  S.orderWalkIndex=n;
+  render();
+  setTimeout(drawBarcodes,60);
+}
+
 // ─── RENDER ─────────────────────────────────────────────────────────────────
 function render(){
   const m=document.getElementById('main');
@@ -1299,7 +1441,6 @@ function renderOrder(){
   const deadline = getOrderDeadline();
   const ms = deadline - new Date();
   const hrs = ms/3600000;
-  const chipCls = hrs<6?'chip-danger':hrs<24?'chip-warn':'chip-ok';
 
   let h=`
   <div class="pg-hdr">
@@ -1332,22 +1473,70 @@ function renderOrder(){
   const pending = S.orders.filter(o=>o.status==='pending');
   if(pending.length) h+=`<div class="banner banner-warn">You have a pending unconfirmed order. Placing a new one will replace it.</div>`;
 
-  orderItems.forEach(item=>{
-    h+=`<div class="ord-card">
+  const flags=getOrderAckFlags(orderItems);
+  const n=orderItems.length;
+  const sumQty=orderItems.reduce((s,it)=>s+it.toOrder,0);
+  const acked=orderItems.filter(it=>flags[it.id]).length;
+
+  h+=`<div class="seg-row">
+    <button type="button" class="seg${S.orderView==='list'?' on':''}" onclick="setOrderView('list')">Full list</button>
+    <button type="button" class="seg${S.orderView==='walk'?' on':''}" onclick="setOrderView('walk')">Walk-through</button>
+  </div>
+  <div class="order-sum-card">
+    <div class="order-sum-grid">
+      <div><div class="order-sum-v">${n}</div><div class="order-sum-l">Line items</div></div>
+      <div><div class="order-sum-v">${sumQty}</div><div class="order-sum-l">Qty total</div></div>
+      <div><div class="order-sum-v" style="color:${acked===n?'#166534':'var(--ck-red)'}">${acked}/${n}</div><div class="order-sum-l">Scanned</div></div>
+    </div>
+    <div class="order-sum-note">Qty total sums every line’s “to order” amount (mixed units). Use line items + qty total + scanned count to match another device while scanning this order in.</div>
+  </div>`;
+
+  if(S.orderView==='walk'){
+    S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,orderItems.length-1));
+    const item=orderItems[S.orderWalkIndex];
+    const ack=!!flags[item.id];
+    const opts=orderItems.map((it,i)=>`<option value="${i}"${i===S.orderWalkIndex?' selected':''}>${escapeHtml(it.name)} — ${it.toOrder} ${escapeHtml(it.unit)}</option>`).join('');
+    h+=`<div class="walk-bar" style="margin-bottom:8px">
+      <select aria-label="Jump to item" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid var(--ck-line);font-size:12px;font-family:inherit;background:#fff;color:#111" onchange="orderWalkPick(parseInt(this.value,10))">${opts}</select>
+      <div class="walk-pos" style="text-align:center;margin-top:4px;font-size:11px;color:#9ca3af">Item ${S.orderWalkIndex+1} of ${n}</div>
+    </div>
+    <div class="card walk-card ord-card${ack?' ord-acked':''}">
+      <div class="walk-breadcrumb">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
+      <div class="walk-name">${escapeHtml(item.name)}</div>
+      <div class="walk-meta">On hand <b>${item.onHand}</b> · Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
+      <div class="ord-qty-n" style="margin:12px auto 0;display:block;text-align:center;font-size:28px">${item.toOrder}</div>
+      <div class="ulbl" style="text-align:center;margin-bottom:10px">${escapeHtml(item.unit)} to order</div>
+      <div style="display:flex;justify-content:center;margin-bottom:10px">
+        <button type="button" class="order-ack-btn${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
+      </div>
+      <div class="bc-wrap"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div></div>
+      <div class="walk-nav" style="margin-top:10px">
+        <button type="button" class="btn btn-secondary" onclick="orderWalkGo(-1)" ${S.orderWalkIndex<=0?'disabled':''}>Previous</button>
+        <button type="button" class="btn btn-primary" onclick="orderWalkGo(1)" ${S.orderWalkIndex>=n-1?'disabled':''}>Next</button>
+      </div>
+    </div>`;
+  }else{
+    orderItems.forEach(item=>{
+      const ack=!!flags[item.id];
+      h+=`<div class="ord-card${ack?' ord-acked':''}">
       <div class="ord-top">
         <div>
-          <div class="item-name" style="font-size:14px">${item.name}</div>
-          <div class="item-meta">${item.cat_l1} › ${item.cat_l2}</div>
-          <div class="item-meta">On hand: <span style="color:var(--ck-red-dark);font-weight:600">${item.onHand}</span> · Par: <span style="font-weight:600">${item.par}</span> ${item.unit}</div>
+          <div class="item-name" style="font-size:14px">${escapeHtml(item.name)}</div>
+          <div class="item-meta">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
+          <div class="item-meta">On hand: <span style="color:var(--ck-red-dark);font-weight:600">${item.onHand}</span> · Par: <span style="font-weight:600">${item.par}</span> ${escapeHtml(item.unit)}</div>
         </div>
         <div class="ord-qty">
           <div class="ord-qty-n">${item.toOrder}</div>
-          <div class="ulbl">${item.unit}</div>
+          <div class="ulbl">${escapeHtml(item.unit)}</div>
         </div>
+      </div>
+      <div class="order-ack-row">
+        <button type="button" class="order-ack-btn${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
       </div>
       <div class="bc-wrap"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div></div>
     </div>`;
-  });
+    });
+  }
 
   h+=`<div class="sticky-footer">
     <div class="sticky-footer-row">
@@ -1718,11 +1907,12 @@ function startEditSession(id){
 function cancelEditSession(){ S.editSessionId=null; S.editDraft={}; render(); }
 
 async function saveEditSession(sessionId){
+  if(isAppBusy()) return;
   const sess = S.sessions.find(s=>s.id===sessionId);
   if(!sess) return;
   const merged = {...sess.counts,...S.editDraft};
   try{
-    setSyncing(true);
+    setSyncing(true,'Saving count changes…');
     await db.updateSessionCounts(sessionId, merged);
     sess.counts = merged;
     ls.set('sessions',S.sessions);
@@ -1742,8 +1932,9 @@ async function saveEditSession(sessionId){
 
 async function deleteSession(sessionId){
   if(!confirm('Delete this inventory session? This will also affect usage calculations.')) return;
+  if(isAppBusy()) return;
   try{
-    setSyncing(true);
+    setSyncing(true,'Deleting session…');
     await db.deleteSession(sessionId);
     S.sessions = S.sessions.filter(s=>s.id!==sessionId);
     ls.set('sessions',S.sessions);
@@ -1753,22 +1944,25 @@ async function deleteSession(sessionId){
     render();
   }catch(e){
     setSyncErr(e.message);
+    render();
   }
 }
 
 async function completeInventory(){
+  if(isAppBusy()) return;
   const id = Date.now().toString();
   const countedAt = new Date().toISOString();
   const counts = {};
   S.items.forEach(i=>{ counts[i.id]=parseFloat(S.draft[i.id])||0; });
   const sess = {id,counted_at:countedAt,notes:'',counts};
   try{
-    setSyncing(true);
+    setSyncing(true,'Saving inventory…');
     await db.saveSession(id,countedAt,counts);
     S.sessions.unshift(sess);
     ls.set('sessions',S.sessions);
     setSyncOk();
     await noteServerSynced();
+    void checkStaleIfOutOfSync();
     S.draft={};
     S.countView='list';
     S.countFormActive=false;
@@ -1786,6 +1980,7 @@ async function completeInventory(){
 }
 
 async function logOrder(){
+  if(isAppBusy()) return;
   const orderItems = computeOrder();
   if(!orderItems.length) return;
   const id = Date.now().toString();
@@ -1795,12 +1990,14 @@ async function logOrder(){
   orderItems.forEach(i=>{ items[i.id]={recommended:i.toOrder,received:null}; });
   const order = {id,ordered_at:orderedAt,session_id:sessionId,status:'pending',items};
   try{
-    setSyncing(true);
+    setSyncing(true,'Placing order…');
     await db.saveOrder(id,orderedAt,sessionId,items);
     S.orders.unshift(order);
     ls.set('orders',S.orders);
     setSyncOk();
     await noteServerSynced();
+    void checkStaleIfOutOfSync();
+    try{ ls.set('orderAck',null); }catch{}
     showBanner('Order logged! Head to Receive when the truck arrives.','ok');
     render();
   }catch(e){
@@ -1812,6 +2009,7 @@ async function logOrder(){
 }
 
 async function confirmReceive(orderId){
+  if(isAppBusy()) return;
   const order = S.orders.find(o=>o.id===orderId);
   if(!order) return;
   const receivedMap={};
@@ -1820,7 +2018,7 @@ async function confirmReceive(orderId){
     receivedMap[itemId]=inp&&inp.value!==''?parseFloat(inp.value):data.recommended;
   });
   try{
-    setSyncing(true);
+    setSyncing(true,'Confirming receipt…');
     await db.confirmReceipt(orderId,receivedMap);
     order.status='received';
     order.received_at=new Date().toISOString();
@@ -1832,6 +2030,7 @@ async function confirmReceive(orderId){
     render();
   }catch(e){
     setSyncErr(e.message);
+    render();
   }
 }
 
@@ -1847,6 +2046,7 @@ function cancelForm(){ S.formView=null; S.editItemId=null; S.formData=null; rend
 function updateForm(f,v){ if(!S.formData) S.formData={}; S.formData[f]=v; }
 
 async function saveItem(){
+  if(isAppBusy()) return;
   const f=S.formData||{};
   if(!f.name||!f.cat_l1||!f.par){ alert('Name, Category Level 1, and Par Level are required.'); return; }
   const existing=S.formView==='edit'?S.items.find(i=>i.id===S.editItemId):null;
@@ -1857,31 +2057,38 @@ async function saveItem(){
     sort_order: existing!=null&&Number.isFinite(parseFloat(existing.sort_order))?parseFloat(existing.sort_order):S.items.length+1
   };
   try{
-    setSyncing(true);
+    const wasAdd=S.formView==='add';
+    setSyncing(true,'Saving item…');
     await db.upsertItem(item);
     if(S.formView==='add') S.items.push(item);
     else { const idx=S.items.findIndex(i=>i.id===item.id); if(idx>=0) S.items[idx]=item; }
     ls.set('items',S.items);
     setSyncOk();
     await noteServerSynced();
+    if(wasAdd) void checkStaleIfOutOfSync();
     S.formView=null; S.editItemId=null; S.formData=null;
     render();
   }catch(e){
     setSyncErr(e.message);
+    render();
   }
 }
 
 async function deleteItem(id){
   if(!confirm('Delete this item? Historical count data for this item will also be removed.')) return;
+  if(isAppBusy()) return;
   try{
-    setSyncing(true);
+    setSyncing(true,'Deleting item…');
     await db.deleteItem(id);
     S.items=S.items.filter(i=>i.id!==id);
     ls.set('items',S.items);
     setSyncOk();
     await noteServerSynced();
     render();
-  }catch(e){ setSyncErr(e.message); }
+  }catch(e){
+    setSyncErr(e.message);
+    render();
+  }
 }
 
 // ─── PWA INSTALL ─────────────────────────────────────────────────────────────
@@ -1891,9 +2098,10 @@ function installPWA(){
 
 // ─── TESTS ───────────────────────────────────────────────────────────────────
 async function runTests(){
-  S.testResults=[{name:'Running…',pass:false,skip:true}];
-  render();
+  if(isAppBusy()) return;
+  setProgressOnly(true,'Running tests…');
   const results=[];
+  try{
 
   // Test 1: Supabase client initialized
   results.push({name:'Supabase client init',pass:!!sb,msg:sb?'':'createClient failed'});
@@ -1938,15 +2146,43 @@ async function runTests(){
   try{ ls.set('_test','ok'); lsOk=ls.get('_test')==='ok'; ls.set('_test',null); }catch{}
   results.push({name:'LocalStorage fallback',pass:lsOk});
 
+  // Test 9–11: Recommended order “Scanned” ack (sig + localStorage)
+  const sigOk=orderRecSig([{id:'i1',toOrder:5},{id:'i2',toOrder:1}])==='i1:5,i2:1';
+  results.push({name:'Order ack recommendation signature',pass:sigOk,msg:sigOk?'':'sig mismatch'});
+  let prevOrderAck=null;
+  try{ prevOrderAck=ls.get('orderAck'); }catch{}
+  try{
+    ls.set('orderAck',{sig:'__stale_test_bad__',flags:{x:true}});
+    const emptyWhenSigMismatch=Object.keys(getOrderAckFlags([{id:'z',toOrder:1}])).length===0;
+    results.push({name:'Order ack ignores wrong stored sig',pass:emptyWhenSigMismatch});
+    const demoRows=[{id:'oa_t_a',toOrder:2},{id:'oa_t_b',toOrder:3}];
+    const demoSig=orderRecSig(demoRows);
+    ls.set('orderAck',{sig:demoSig,flags:{oa_t_a:true}});
+    const f=getOrderAckFlags(demoRows);
+    const readOk=!!f.oa_t_a&&!f.oa_t_b;
+    results.push({name:'Order ack reads flags for current sig',pass:readOk,msg:readOk?'':JSON.stringify(f)});
+  }finally{
+    try{ ls.set('orderAck',prevOrderAck); }catch{}
+  }
+
   S.testResults=results;
   render();
+  }finally{
+    setProgressOnly(false);
+  }
 }
 
 async function reloadData(){
-  document.getElementById('loading-overlay').style.display='flex';
-  document.getElementById('loading-msg').textContent='Refreshing data…';
-  await loadFromDB();
-  document.getElementById('loading-overlay').style.display='none';
+  if(isAppBusy()) return;
+  const ov=document.getElementById('loading-overlay');
+  const lm=document.getElementById('loading-msg');
+  ov.style.display='flex';
+  lm.textContent='Refreshing data…';
+  try{
+    await loadFromDB();
+  }finally{
+    ov.style.display='none';
+  }
   render();
 }
 
@@ -2013,7 +2249,6 @@ async function finishBoot(){
     window.__ckVisStaleBound=true;
     document.addEventListener('visibilitychange',()=>{
       if(document.visibilityState==='hidden') flushLayoutPushIfPending();
-      if(document.visibilityState==='visible') void checkRemoteStale();
     });
   }
 }
