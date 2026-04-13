@@ -97,7 +97,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .prog-fill{height:100%;background:var(--ck-red);border-radius:2px;transition:width .3s}
 .prog-fill.done{background:#22c55e}
 /* Buttons */
-.btn{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border:none;transition:opacity .15s,filter .15s}
+.btn{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border:none;transition:opacity .15s,filter .15s;touch-action:manipulation}
 .btn:active{opacity:.85}
 .btn-primary{background:var(--ck-red);color:#fff}
 .btn-primary:hover{filter:brightness(0.94)}
@@ -447,6 +447,11 @@ const db = {
       const {error:oie} = await sb.from('ck_order_items').insert(rows);
       if(oie) throw oie;
     }
+  },
+
+  async deleteOrder(orderId){
+    const {error} = await sb.from('ck_orders').delete().eq('id',orderId);
+    if(error) throw error;
   },
 
   async confirmReceipt(orderId, receivedMap){
@@ -1079,7 +1084,7 @@ function setOrderView(mode){
     S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,oi.length-1));
   }
   render();
-  if(mode==='walk') setTimeout(drawBarcodes,60);
+  if(mode==='walk') scheduleDrawBarcodes();
 }
 
 function orderWalkGo(delta){
@@ -1087,7 +1092,7 @@ function orderWalkGo(delta){
   if(!oi.length) return;
   S.orderWalkIndex=Math.max(0,Math.min(oi.length-1,S.orderWalkIndex+delta));
   render();
-  setTimeout(drawBarcodes,60);
+  scheduleDrawBarcodes();
 }
 
 function orderWalkPick(ix){
@@ -1096,7 +1101,62 @@ function orderWalkPick(ix){
   if(!Number.isFinite(n)||n<0||n>=oi.length) return;
   S.orderWalkIndex=n;
   render();
-  setTimeout(drawBarcodes,60);
+  scheduleDrawBarcodes();
+}
+
+/** Pending order row tied to the most recent inventory count */
+function pendingOrderForLatestCount(){
+  if(!S.sessions.length) return null;
+  const sid=S.sessions[0].id;
+  return S.orders.find(o=>o.status==='pending'&&o.session_id===sid)||null;
+}
+
+/** Remove a pending (not yet received) order by id — used from Order and Receive tabs */
+async function deletePendingOrderById(orderId, confirmMessage){
+  const ord=S.orders.find(o=>o.id===orderId&&o.status==='pending');
+  if(!ord) return;
+  const msg=confirmMessage||'Delete this pending order? You can place a new one from the Order tab when ready.';
+  if(!confirm(msg)) return;
+  if(isAppBusy()) return;
+  try{
+    setSyncing(true,'Removing order…');
+    await db.deleteOrder(orderId);
+    S.orders=S.orders.filter(o=>o.id!==orderId);
+    ls.set('orders',S.orders);
+    setSyncOk();
+    await noteServerSynced();
+    try{ ls.set('orderAck',null); }catch{}
+    showBanner('Pending order removed.','ok');
+    render();
+  }catch(e){
+    setSyncErr(e.message);
+    render();
+  }
+}
+
+async function deletePendingOrderForLatest(){
+  const po=pendingOrderForLatestCount();
+  if(!po) return;
+  await deletePendingOrderById(po.id,'Delete this pending order? You can log a new order from the same count afterward.');
+}
+
+/*
+  UI architecture (single index.html): all screens are string-built HTML assigned to #main.innerHTML
+  on each render(). That pattern is simple but re-parses the whole main column on every state change,
+  which is the main source of “lag” on slower phones. Mitigations in this file: debounced barcode
+  generation, guarding heavy work to the active tab, and keeping renders purposeful (no extra polls).
+  Larger wins later: incremental DOM updates, a small component layer, or virtualizing long Setup lists.
+*/
+let __drawBcTimer=null;
+function scheduleDrawBarcodes(){
+  if(__drawBcTimer) clearTimeout(__drawBcTimer);
+  if(S.tab!=='order') return;
+  __drawBcTimer=setTimeout(()=>{
+    __drawBcTimer=null;
+    requestAnimationFrame(()=>{
+      if(S.tab==='order') drawBarcodes();
+    });
+  }, 90);
 }
 
 // ─── RENDER ─────────────────────────────────────────────────────────────────
@@ -1109,7 +1169,7 @@ function render(){
   if(S.tab==='receive') m.innerHTML=renderReceive();
   if(S.tab==='usage')   m.innerHTML=renderUsage();
   if(S.tab==='setup')   m.innerHTML=renderSetup();
-  if(S.tab==='order') setTimeout(drawBarcodes,60);
+  if(S.tab==='order') scheduleDrawBarcodes();
 }
 
 function svgChevron(open){
@@ -1465,13 +1525,47 @@ function renderOrder(){
   </div>`;
 
   if(!S.sessions.length) return h+`<div class="empty">Take an inventory count first to generate an order.</div>`;
-  const orderItems = computeOrder();
   const last = S.sessions[0];
-  h+=`<div class="banner banner-info" style="margin-bottom:7px">Based on count from ${fmtDate(last.counted_at)}</div>`;
-  if(!orderItems.length) return h+`<div class="empty" style="color:#166534">✓ All items at or above par — no order needed!</div>`;
+  const orderItems = computeOrder();
+  const pendingAll=S.orders.filter(o=>o.status==='pending');
+  const pendingForLatest=pendingOrderForLatestCount();
+  const otherPending=pendingAll.filter(o=>o!==pendingForLatest);
 
-  const pending = S.orders.filter(o=>o.status==='pending');
-  if(pending.length) h+=`<div class="banner banner-warn">You have a pending unconfirmed order. Placing a new one will replace it.</div>`;
+  h+=`<div class="banner banner-info" style="margin-bottom:7px">Based on count from ${fmtDate(last.counted_at)}</div>`;
+
+  if(pendingForLatest){
+    const lines=Object.keys(pendingForLatest.items||{});
+    const nLines=lines.length;
+    const sumLogged=Object.values(pendingForLatest.items||{}).reduce((s,d)=>s+(parseFloat(d.recommended)||0),0);
+    h+=`<div class="banner banner-ok" style="margin-bottom:7px">
+      <div style="margin-bottom:8px;line-height:1.45">An order is <strong>already saved</strong> for this count (${fmtDateTime(pendingForLatest.ordered_at)}): <strong>${nLines}</strong> line items, <strong>${sumLogged}</strong> total recommended units. Open <strong>Receive</strong> when you are ready to confirm the truck.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('receive')">Open Receive</button>
+        <button type="button" class="btn btn-danger btn-sm" onclick="deletePendingOrderForLatest()">Delete order and start over</button>
+      </div>
+    </div>`;
+  }
+  if(otherPending.length){
+    h+=`<div class="banner banner-warn" style="margin-bottom:7px">A pending order is still on file from an older count. Review or receive it on the Receive tab.</div>`;
+  }
+
+  if(!orderItems.length && !pendingForLatest){
+    return h+`<div class="empty" style="color:#166534">✓ All items at or above par — no order needed!</div>`;
+  }
+  if(!orderItems.length && pendingForLatest){
+    h+=`<div class="empty" style="padding-top:4px">No lines below par to recommend. Delete the saved order above if you need to log a different order from this same count.</div>
+  <div class="sticky-footer">
+    <div class="sticky-footer-row">
+      <button class="btn btn-secondary" onclick="window.print()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Print
+      </button>
+      <button class="btn btn-primary" disabled title="An order is already logged for this count">Log Order Placed</button>
+    </div>
+    ${stickyFooterCopyright()}
+  </div>`;
+    return h;
+  }
 
   const flags=getOrderAckFlags(orderItems);
   const n=orderItems.length;
@@ -1544,7 +1638,7 @@ function renderOrder(){
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         Print
       </button>
-      <button class="btn btn-primary" onclick="logOrder()">
+      <button class="btn btn-primary" onclick="logOrder()"${pendingForLatest?' disabled title="An order is already logged for this count — delete it above to log a new one."':''}>
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
         Log Order Placed
       </button>
@@ -1555,6 +1649,7 @@ function renderOrder(){
 }
 
 function drawBarcodes(){
+  if(S.tab!=='order') return;
   const orderItems = computeOrder();
   orderItems.forEach(item=>{
     const wrap = document.getElementById('bc-'+item.id);
@@ -1563,7 +1658,7 @@ function drawBarcodes(){
     wrap.innerHTML='';
     wrap.appendChild(svg);
     try{
-      JsBarcode(svg,item.code,{format:'CODE128',width:1.8,height:52,displayValue:true,fontSize:12,margin:8,background:'#fff',lineColor:'#000'});
+      JsBarcode(svg,item.code,{format:'CODE128',width:1.6,height:44,displayValue:true,fontSize:11,margin:6,background:'#fff',lineColor:'#000'});
       svg.style.maxWidth='100%';
     }catch(e){
       wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${item.code}</span>`;
@@ -1596,6 +1691,9 @@ function renderReceive(){
   if(!pending.length) return h+`<div class="empty">No pending orders. Place an order from the Order tab first.</div>`;
 
   const order = pending[0];
+  if(pending.length>1){
+    h+=`<div class="banner banner-warn" style="margin-bottom:7px">${pending.length} pending orders on file. This screen shows the <strong>most recent</strong> (${fmtDateTime(order.ordered_at)}). Delete it below if it was logged by mistake, then the next one will appear here.</div>`;
+  }
   h+=`<div class="banner banner-info">Order placed ${fmtDate(order.ordered_at)} · ${Object.keys(order.items).length} items</div>`;
   h+=`<div class="card">`;
   h+=`<div class="card-hdr-static"><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Item</span><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Received</span></div>`;
@@ -1605,19 +1703,20 @@ function renderReceive(){
     if(!item) return;
     h+=`<div class="item-row">
       <div>
-        <div class="item-name">${item.name}</div>
-        <div class="item-meta">Ordered: <span style="color:var(--ck-red);font-weight:600">${data.recommended}</span> ${item.unit}</div>
+        <div class="item-name">${escapeHtml(item.name)}</div>
+        <div class="item-meta">Ordered: <span style="color:var(--ck-red);font-weight:600">${data.recommended}</span> ${escapeHtml(item.unit)}</div>
       </div>
       <div style="display:flex;align-items:center">
         <input class="qinput" type="number" min="0" step="0.5" id="recv-${itemId}" placeholder="${data.recommended}">
-        <span class="ulbl">${item.unit}</span>
+        <span class="ulbl">${escapeHtml(item.unit)}</span>
       </div>
     </div>`;
   });
   h+='</div>';
 
   h+=`<div class="sticky-footer">
-    <div class="sticky-footer-row">
+    <div class="sticky-footer-row between" style="flex-wrap:wrap;gap:8px">
+      <button type="button" class="btn btn-danger btn-sm" onclick="deletePendingOrderById('${order.id}')">Delete pending order</button>
       <button class="btn btn-primary" onclick="confirmReceive('${order.id}')">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
         Confirm Receipt
@@ -1967,7 +2066,7 @@ async function completeInventory(){
     S.countView='list';
     S.countFormActive=false;
     showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
-    render();
+    setTab('order');
   }catch(e){
     S.sessions.unshift(sess);
     ls.set('sessions',S.sessions);
@@ -1981,6 +2080,10 @@ async function completeInventory(){
 
 async function logOrder(){
   if(isAppBusy()) return;
+  if(pendingOrderForLatestCount()){
+    showBanner('An order is already logged for this count. Delete it on the Order tab first, or confirm it on Receive.','warn');
+    return;
+  }
   const orderItems = computeOrder();
   if(!orderItems.length) return;
   const id = Date.now().toString();
@@ -1999,7 +2102,7 @@ async function logOrder(){
     void checkStaleIfOutOfSync();
     try{ ls.set('orderAck',null); }catch{}
     showBanner('Order logged! Head to Receive when the truck arrives.','ok');
-    render();
+    setTab('receive');
   }catch(e){
     S.orders.unshift(order);
     ls.set('orders',S.orders);
