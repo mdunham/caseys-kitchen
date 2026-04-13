@@ -25,6 +25,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* Header */
 .hdr{background:#fff;border-bottom:1px solid var(--ck-line);padding:7px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:50;box-shadow:0 1px 0 rgba(237,28,36,.04)}
 .logo{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px}
+button.logo{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-align:left;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button.logo:active{opacity:.88}
+button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;border-radius:6px}
 .logo-dot{width:22px;height:22px;background:var(--ck-red);border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700}
 .hdr-right{display:flex;align-items:center;gap:6px}
 .chip{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:500;white-space:nowrap}
@@ -253,10 +256,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <span id="loading-msg">Connecting to database…</span>
   </div>
   <div class="hdr">
-    <div class="logo">
-      <div class="logo-dot">CK</div>
+    <button type="button" class="logo" onclick="setTab('setup')" aria-label="Open Setup" title="Setup — items &amp; options">
+      <span class="logo-dot">CK</span>
       Casey's Kitchen
-    </div>
+    </button>
     <div class="hdr-right">
       <span id="sched-chip" class="chip chip-gray"></span>
       <div id="sync-dot" class="sync-dot" title="Sync status"></div>
@@ -1394,6 +1397,7 @@ function renderCount(){
         <div class="count-form-lock-title" id="count-lock-title">New inventory count</div>
         <div class="count-form-lock-sub">Start when you are ready. You will step through items one at a time; switch to <b>Full list</b> anytime.</div>
         <button type="button" class="btn btn-primary" style="width:100%" onclick="startNewCountSession()">Start new count</button>
+        <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="goToCountHistory()">Previous counts</button>
       </div>
     </div>`;
   }
@@ -1983,6 +1987,15 @@ function setDraft(id,val){
 }
 
 function setEditDraft(id,val){ S.editDraft[id]=val; }
+
+/** From the new-count lock modal: open Count History without toggling off if already on */
+function goToCountHistory(){
+  S.historyMode=true;
+  S.editSessionId=null;
+  S.editDraft={};
+  S.countView='list';
+  render();
+}
 
 function toggleHistory(){
   S.historyMode=!S.historyMode;
