@@ -1178,6 +1178,78 @@ function computeOrder(){
   return window.__CK_LOGIC.computeOrderLines(S.items, last.counts||{}, getOrderManualAdj(), sortIds);
 }
 
+/** Session-scoped “do not include on this recommended order” (until logged or cleared). */
+const LS_ORDER_REC_EXCLUDED='orderRecExcluded';
+
+function pruneOrderRecExcludedMap(){
+  if(!S.sessions||!S.sessions.length) return;
+  const m=ls.get(LS_ORDER_REC_EXCLUDED);
+  if(!m||typeof m!=='object') return;
+  const valid=new Set(S.sessions.map(s=>s.id));
+  let changed=false;
+  const next={...m};
+  for(const k of Object.keys(next)){
+    if(!valid.has(k)){ delete next[k]; changed=true; }
+  }
+  if(changed) ls.set(LS_ORDER_REC_EXCLUDED,next);
+}
+
+function getOrderRecExcludedSet(){
+  pruneOrderRecExcludedMap();
+  const sid=S.sessions[0]?.id;
+  if(!sid) return new Set();
+  const m=ls.get(LS_ORDER_REC_EXCLUDED)||{};
+  const arr=m[sid];
+  return new Set(Array.isArray(arr)?arr:[]);
+}
+
+/** Recommended lines for the Order tab and “Log order” — same as computeOrder minus user-removed lines. */
+function recommendedOrderLines(){
+  const ex=getOrderRecExcludedSet();
+  return computeOrder().filter(it=>!ex.has(it.id));
+}
+
+function persistOrderRecExcludedSet(exSet){
+  const sid=S.sessions[0]?.id;
+  if(!sid) return;
+  const m={...(ls.get(LS_ORDER_REC_EXCLUDED)||{})};
+  if(exSet.size) m[sid]=[...exSet];
+  else delete m[sid];
+  ls.set(LS_ORDER_REC_EXCLUDED,m);
+}
+
+function excludeRecommendedLine(itemId){
+  if(!S.sessions.length) return;
+  const raw=computeOrder();
+  if(!raw.some(i=>i.id===itemId)) return;
+  const ex=getOrderRecExcludedSet();
+  ex.add(itemId);
+  persistOrderRecExcludedSet(ex);
+  const n=recommendedOrderLines().length;
+  if(S.orderView==='walk'){
+    if(!n){ S.orderView='list'; S.orderWalkIndex=0; }
+    else S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,n-1));
+  }
+  render();
+}
+
+function restoreRecommendedLine(itemId){
+  if(!S.sessions.length) return;
+  const ex=getOrderRecExcludedSet();
+  if(!ex.has(itemId)) return;
+  ex.delete(itemId);
+  persistOrderRecExcludedSet(ex);
+  render();
+}
+
+function clearOrderRecExcludedForSession(sessionId){
+  if(!sessionId) return;
+  const m={...(ls.get(LS_ORDER_REC_EXCLUDED)||{})};
+  if(!m[sessionId]) return;
+  delete m[sessionId];
+  ls.set(LS_ORDER_REC_EXCLUDED,m);
+}
+
 // ─── ORDER TAB HELPERS (ack toggles + list/walk) ─────────────────────────────
 function orderRecSig(items){
   return items.map(i=>i.id+':'+i.toOrder).join(',');
@@ -1196,7 +1268,7 @@ function setOrderListHideScanned(v){
 }
 
 function toggleOrderAck(itemId){
-  const items=computeOrder();
+  const items=recommendedOrderLines();
   if(!items.some(i=>i.id===itemId)) return;
   const sig=orderRecSig(items);
   const cur=getOrderAckFlags(items);
@@ -1215,7 +1287,7 @@ function toggleOrderAck(itemId){
 
 function setOrderView(mode){
   S.orderView=mode;
-  const oi=computeOrder();
+  const oi=recommendedOrderLines();
   if(mode==='walk'){
     if(!oi.length){ S.orderView='list'; render(); return; }
     S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,oi.length-1));
