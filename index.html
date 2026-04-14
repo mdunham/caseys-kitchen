@@ -403,7 +403,7 @@ const S = {
   staleDialogOpen: false,
   stalePollId: null,
   staleCheckInFlight: false,
-  /** When false, the count form is covered until "Start new count" is used */
+  /** When false and there are no saved sessions yet, the start-count modal is shown. After the first count exists, this stays true when on Count. */
   countFormActive: false,
   /** Count tab: show manual “extra for truck order” UI (toggled via header cog) */
   countManualOrderOpen: false,
@@ -1563,7 +1563,7 @@ function renderCount(){
     h+=`<div class="count-form-lock" role="dialog" aria-modal="true" aria-labelledby="count-lock-title">
       <div class="count-form-lock-card">
         <div class="count-form-lock-title" id="count-lock-title">New inventory count</div>
-        <div class="count-form-lock-sub">Start when you are ready. You will step through items one at a time; switch to <b>Full list</b> anytime.</div>
+        <div class="count-form-lock-sub">This screen only appears until your <b>first</b> inventory is saved. After that, the count form stays open here automatically. When you start, you can step through items or use <b>Full list</b>.</div>
         <button type="button" class="btn btn-primary" style="width:100%" onclick="startNewCountSession()">Start new count</button>
         <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="goToCountHistory()">Previous counts</button>
       </div>
@@ -2176,6 +2176,7 @@ function applyRouteFromHash(){
     __ckUrlBoot=false;
     document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
     const tb=document.getElementById('t-'+S.tab); if(tb) tb.classList.add('on');
+    syncCountFormAvailability();
   }finally{
     __ckUrlApplying=false;
   }
@@ -2200,6 +2201,7 @@ function setTab(t){
   S.tab=t; S.historyMode=false; S.editSessionId=null;
   if(t!=='count'){ S.countView='list'; }
   if(t!=='order'){ S.orderView='list'; }
+  if(t==='count') syncCountFormAvailability();
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
   const tb=document.getElementById('t-'+t); if(tb) tb.classList.add('on');
   render();
@@ -2236,6 +2238,7 @@ function toggleHistory(){
   S.editSessionId=null;
   S.editDraft={};
   if(S.historyMode) S.countView='list';
+  syncCountFormAvailability();
   render();
 }
 
@@ -2287,6 +2290,7 @@ async function deleteSession(sessionId){
     setSyncOk();
     await noteServerSynced();
     S.editSessionId=null; S.editDraft={};
+    syncCountFormAvailability();
     render();
   }catch(e){
     setSyncErr(e.message);
@@ -2311,8 +2315,8 @@ async function completeInventory(){
     void checkStaleIfOutOfSync();
     S.draft={};
     S.countView='list';
-    S.countFormActive=false;
     S.countManualOrderOpen=false;
+    syncCountFormAvailability();
     showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
     setTab('order');
   }catch(e){
@@ -2321,8 +2325,8 @@ async function completeInventory(){
     setSyncErr(e.message);
     S.draft={};
     S.countView='list';
-    S.countFormActive=false;
     S.countManualOrderOpen=false;
+    syncCountFormAvailability();
     render();
   }
 }
@@ -2640,6 +2644,12 @@ function showBanner(msg,type){
 }
 
 // ─── DATA LOAD ───────────────────────────────────────────────────────────────
+/** Once any inventory session exists, keep the count form unlocked (no start modal). */
+function syncCountFormAvailability(){
+  if(S.sessions&&S.sessions.length>0) S.countFormActive=true;
+  else S.countFormActive=false;
+}
+
 async function loadFromDB(){
   if(!sb){ loadFromCache(); S.lastRemoteFingerprint=null; return; }
   try{
@@ -2667,6 +2677,7 @@ async function loadFromDB(){
     await mergeLayoutFromRemote();
     setSyncOk();
     await noteServerSynced();
+    syncCountFormAvailability();
   }catch(e){
     setSyncErr(e.message);
     loadFromCache();
@@ -2679,6 +2690,7 @@ function loadFromCache(){
   S.items = items||SEED_ITEMS;
   S.sessions = ls.get('sessions')||[];
   S.orders = ls.get('orders')||[];
+  syncCountFormAvailability();
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
