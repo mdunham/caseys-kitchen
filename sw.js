@@ -1,5 +1,15 @@
-const CACHE = 'ck-inventory-v2';
-const PRECACHE = ['./index.html', './manifest.json', './icon.svg', './favicon.ico'];
+const CACHE = 'ck-inventory-v4';
+const PRECACHE = [
+  './index.html',
+  './manifest.json',
+  './lib/ck-logic.mjs',
+  './icon.svg',
+  './favicon.ico',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './apple-touch-icon.png',
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -26,8 +36,11 @@ self.addEventListener('fetch', e => {
     caches.match(e.request).then(cached => {
       const network = fetch(e.request).then(res => {
         if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
+          const u = new URL(e.request.url);
+          if (u.protocol === 'http:' || u.protocol === 'https:') {
+            const clone = res.clone();
+            caches.open(CACHE).then(c => c.put(e.request, clone));
+          }
         }
         return res;
       }).catch(() => cached);

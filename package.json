@@ -2,10 +2,14 @@
   "name": "caseys-kitchen",
   "private": true,
   "scripts": {
-    "gen-favicon": "node scripts/gen-favicon.cjs"
+    "gen-icons": "node scripts/gen-icons.cjs",
+    "gen-favicon": "node scripts/gen-icons.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "png-to-ico": "^2.1.8",
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "vitest": "^3.0.5"
   }
 }

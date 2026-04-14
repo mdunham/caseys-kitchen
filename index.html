@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ED1C24">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="CK Inventory">
 <meta name="author" content="Matthew Dunham, send_me_letters@hotmail.com">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./favicon.ico" sizes="48x48" type="image/x-icon">
 <link rel="icon" href="./icon.svg" type="image/svg+xml" sizes="any">
-<link rel="apple-touch-icon" href="./icon.svg">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180">
 <title>Casey's Kitchen</title>
 <style>
 :root{
@@ -69,6 +70,9 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .badge.info{background:#dbeafe;color:#1e40af}
 .item-row{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid #f4f4f5}
 .item-row:last-child{border-bottom:none}
+.count-item-row{transition:background .18s ease,box-shadow .18s ease,border-radius .18s ease}
+.count-item-row:focus-within{background:linear-gradient(90deg,var(--ck-red-soft) 0%,#fff 55%);box-shadow:inset 4px 0 0 var(--ck-red);border-radius:8px}
+.count-item-row:focus-within .item-name{font-weight:800;color:var(--ck-red-dark)}
 .l1-block{margin-bottom:8px}
 .l1-hdr{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 10px;background:#fff;border:1px solid var(--ck-line);border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px}
 .l1-hdr:active{background:#fafafa}
@@ -80,13 +84,40 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .walk-bar{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
 .walk-selects{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .walk-selects select{width:100%;padding:7px 8px;border-radius:7px;border:1px solid var(--ck-line);font-size:12px;font-family:inherit;background:#fff;color:#111}
-.walk-card{text-align:center;padding:14px 12px 12px}
+.walk-card{text-align:center;padding:14px 12px 12px;overflow:visible}
 .walk-breadcrumb{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
 .walk-name{font-size:18px;font-weight:700;color:#111;margin-bottom:4px;line-height:1.25}
 .walk-meta{font-size:12px;color:#6b7280;margin-bottom:12px}
-.walk-qty{width:100%;max-width:200px;padding:11px 10px;font-size:22px;font-weight:700;border-radius:10px;border:2px solid var(--ck-line);background:#fafafa;margin:0 auto 12px;display:block;text-align:center;font-family:'SF Mono',monospace}
+.walk-qty-strip{display:flex;align-items:stretch;justify-content:center;gap:8px;margin:0 auto 14px;max-width:100%;padding:0 2px}
+.walk-qty-center{flex:0 1 220px;min-width:0;display:flex;flex-direction:column;align-items:center}
+.walk-qty{width:100%;max-width:220px;padding:12px 10px;font-size:24px;font-weight:700;border-radius:10px;border:2px solid var(--ck-line);background:#fafafa;margin:0;display:block;text-align:center;font-family:'SF Mono',monospace}
 .walk-qty:focus{border-color:var(--ck-red);background:#fff;outline:none}
-.walk-nav{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:2px}
+.walk-float-btn{flex:0 0 auto;width:78px;min-height:88px;padding:8px 6px;border:none;border-radius:14px;font-size:13px;font-weight:800;font-family:inherit;line-height:1.15;cursor:pointer;touch-action:manipulation;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;box-shadow:0 6px 20px rgba(17,17,17,.14);transition:transform .12s,filter .12s,opacity .12s}
+.walk-float-btn:active:not(:disabled){transform:scale(.97)}
+.walk-float-btn:disabled{opacity:.38;cursor:not-allowed;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.walk-float-prev{background:linear-gradient(180deg,#f9fafb 0%,#eef0f3 100%);color:#374151;border:1px solid var(--ck-line)}
+.walk-float-next{background:linear-gradient(180deg,var(--ck-red) 0%,var(--ck-red-dark) 100%);color:#fff;border:1px solid var(--ck-red-dark)}
+.walk-float-icon{font-size:28px;font-weight:700;line-height:1;font-family:system-ui,sans-serif;opacity:.95}
+.walk-float-lbl{font-size:11px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+@media (max-width:380px){
+  .walk-float-btn{width:68px;min-height:80px;padding:6px 4px}
+  .walk-float-icon{font-size:24px}
+  .walk-qty-center{flex-basis:min(200px,46vw)}
+}
+.manual-order-wrap{margin-top:10px;padding-top:10px;border-top:1px solid var(--ck-line);text-align:center}
+.manual-order-lbl{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.manual-order-row{display:flex;align-items:center;justify-content:center;gap:10px}
+.manual-order-val{min-width:36px;font-size:16px;font-weight:700;font-family:'SF Mono',monospace;color:var(--ck-red-dark)}
+.manual-order-wrap .btn-manual{min-width:44px;padding:9px 12px;font-size:17px;font-weight:700;line-height:1;border-radius:8px;border:1px solid var(--ck-line);background:#f9fafb;cursor:pointer;font-family:inherit;color:#374151;touch-action:manipulation}
+.manual-order-wrap .btn-manual:active{background:#eee}
+.manual-order-hint{font-size:10px;color:#9ca3af;margin-top:8px;line-height:1.4;max-width:300px;margin-left:auto;margin-right:auto}
+.manual-order-inline{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 10px 8px;border-bottom:1px solid #f4f4f5;font-size:11px;color:#6b7280}
+.manual-order-inline:last-child{border-bottom:none}
+.manual-order-inline .btn-manual-sm{min-width:32px;padding:4px 8px;font-size:14px;font-weight:700;line-height:1;border-radius:6px;border:1px solid var(--ck-line);background:#f9fafb;cursor:pointer;font-family:inherit;color:#374151;touch-action:manipulation}
+.manual-order-inline .btn-manual-sm:active{background:#eee}
+.manual-order-val-sm{font-weight:700;font-family:'SF Mono',monospace;color:var(--ck-red-dark);min-width:22px;text-align:center}
+.manual-order-inline-lbl{color:#9ca3af;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-right:2px}
+.manual-order-inline-prev{margin-left:auto;color:#9ca3af;font-size:10px}
 .walk-pos{font-size:11px;color:#9ca3af;margin-bottom:6px}
 .reorder-btns{display:flex;flex-direction:column;gap:2px;margin-right:4px}
 .reorder-btns button{min-width:26px;padding:1px 0;font-size:10px;line-height:1;border-radius:4px;border:1px solid var(--ck-line);background:#f9fafb;cursor:pointer;font-family:inherit;color:#374151}
@@ -230,8 +261,12 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .pin-actions{margin-top:12px}
 /* Scrollable SQL block */
 .sql-block{background:#1e1e2e;color:#cdd6f4;font-size:10px;font-family:'SF Mono',monospace;padding:9px;border-radius:7px;overflow-x:auto;white-space:pre;line-height:1.45;margin:6px 0}
-/* Install banner */
-.install-banner{background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 10px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:6px}
+/* Install banner (shown on all tabs until dismissed or installed) */
+.install-banner{border-radius:8px;padding:9px 10px;margin-bottom:8px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.install-banner--chrome{background:#fffbeb;border:1px solid #fcd34d}
+.install-banner--ios{background:#eff6ff;border:1px solid #93c5fd}
+.install-banner--android{background:#fffbeb;border:1px solid #fcd34d}
+.install-banner .install-banner-actions{display:flex;gap:6px;flex-shrink:0;align-items:flex-start}
 .loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;z-index:200;font-size:13px;color:#6b7280}
 .spinner{width:28px;height:28px;border:3px solid #f3f4f6;border-top:3px solid var(--ck-red);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -409,7 +444,15 @@ const db = {
 
     const ordMap = {};
     orders.forEach(o=>{ ordMap[o.id]={...o,items:{}}; });
-    oitems.forEach(i=>{ if(ordMap[i.order_id]) ordMap[i.order_id].items[i.item_id]={recommended:i.recommended,received:i.received}; });
+    oitems.forEach(i=>{
+      if(!ordMap[i.order_id]) return;
+      const rec=i.recommended!=null&&i.recommended!==''?parseFloat(i.recommended):0;
+      const recv=i.received!=null&&i.received!==''?parseFloat(i.received):null;
+      ordMap[i.order_id].items[i.item_id]={
+        recommended:Number.isFinite(rec)?rec:0,
+        received:Number.isFinite(recv)?recv:null
+      };
+    });
 
     return {
       items: items||[],
@@ -463,9 +506,14 @@ const db = {
   async saveOrder(orderId, orderedAt, sessionId, items){
     const {error:oe} = await sb.from('ck_orders').insert({id:orderId,ordered_at:orderedAt,session_id:sessionId,status:'pending'});
     if(oe) throw oe;
-    const rows = Object.entries(items).map(([item_id,data])=>({
-      order_id:orderId, item_id, recommended:data.recommended, received:null
-    }));
+    const rows = Object.entries(items).map(([item_id,data])=>{
+      const r=parseFloat(data&&data.recommended);
+      return {
+        order_id:orderId, item_id,
+        recommended:Number.isFinite(r)?r:0,
+        received:null
+      };
+    });
     if(rows.length){
       const {error:oie} = await sb.from('ck_order_items').insert(rows);
       if(oie) throw oie;
@@ -477,11 +525,19 @@ const db = {
     if(error) throw error;
   },
 
-  async confirmReceipt(orderId, receivedMap){
-    const {error:oe} = await sb.from('ck_orders').update({status:'received',received_at:new Date().toISOString()}).eq('id',orderId);
+  async confirmReceipt(orderId, receivedMap, lineItems){
+    const receivedAt=new Date().toISOString();
+    const {error:oe} = await sb.from('ck_orders').update({status:'received',received_at:receivedAt}).eq('id',orderId);
     if(oe) throw oe;
-    for(const [item_id,received] of Object.entries(receivedMap)){
-      const {error} = await sb.from('ck_order_items').update({received}).eq('order_id',orderId).eq('item_id',item_id);
+    const lines=lineItems&&typeof lineItems==='object'?lineItems:{};
+    const entries=Object.entries(lines);
+    if(!entries.length) return;
+    const CK=window.__CK_LOGIC;
+    if(!CK) throw new Error('App logic not loaded');
+    for(const [item_id,data] of entries){
+      const raw=receivedMap&&Object.prototype.hasOwnProperty.call(receivedMap,item_id)?receivedMap[item_id]:data?.recommended;
+      const received=CK.normalizeReceivedQuantity(raw,data?.recommended);
+      const {error}=await sb.from('ck_order_items').update({received}).eq('order_id',orderId).eq('item_id',item_id);
       if(error) throw error;
     }
   },
@@ -1061,18 +1117,48 @@ function buildUsageWeekRollup(usage){
     }));
 }
 
+function getOrderManualAdj(){ return ls.get('orderManualAdj')||{}; }
+
+function setOrderManualAdj(map){ ls.set('orderManualAdj', map||{}); }
+
+function clearOrderManualAdj(){ setOrderManualAdj({}); }
+
+/** Half-increments to match 0.5 count steps (see lib/ck-logic.mjs + tests) */
+function roundOrderAdj(n){
+  return window.__CK_LOGIC.roundOrderAdj(n);
+}
+
+function bumpOrderManualAdj(itemId, delta){
+  const o={...getOrderManualAdj()};
+  let cur=parseFloat(o[itemId]);
+  if(!Number.isFinite(cur)) cur=0;
+  cur=roundOrderAdj(cur+delta);
+  if(cur===0) delete o[itemId];
+  else o[itemId]=cur;
+  setOrderManualAdj(o);
+  render();
+}
+
+function fmtManualAdj(adj){
+  return window.__CK_LOGIC.fmtManualAdj(adj);
+}
+
+function countDraftOnHand(itemId){
+  const v=S.draft[itemId];
+  if(v===undefined||v===''||String(v).trim()==='') return null;
+  const n=parseFloat(v);
+  return Number.isFinite(n)?n:0;
+}
+
+function parBasedToOrder(item, onHand){
+  return window.__CK_LOGIC.parBasedToOrder(item, onHand);
+}
+
 function computeOrder(){
   if(!S.sessions.length) return [];
-  const last = S.sessions[0]; // sessions sorted desc
-  const ord=S.items.map(item=>{
-    const onHand = parseFloat(last.counts[item.id])||0;
-    const toOrder = Math.ceil(Math.max(0, item.par - onHand));
-    return {...item,onHand,toOrder};
-  }).filter(i=>i.toOrder>0);
-  const orderIds=flattenWalkItems(getOrderedGroups(S.items)).map(i=>i.id);
-  const rank={};
-  orderIds.forEach((id,ix)=>{ rank[id]=ix; });
-  return ord.sort((a,b)=>(rank[a.id]??1e9)-(rank[b.id]??1e9));
+  const last=S.sessions[0];
+  const sortIds=flattenWalkItems(getOrderedGroups(S.items)).map(i=>i.id);
+  return window.__CK_LOGIC.computeOrderLines(S.items, last.counts||{}, getOrderManualAdj(), sortIds);
 }
 
 // ─── ORDER TAB HELPERS (ack toggles + list/walk) ─────────────────────────────
@@ -1198,12 +1284,14 @@ function render(){
   const m=document.getElementById('main');
   if(!m) return;
   updateScheduleChip();
-  if(S.tab==='count')   m.innerHTML=S.historyMode ? renderHistory() : renderCount();
-  if(S.tab==='order')   m.innerHTML=renderOrder();
-  if(S.tab==='receive') m.innerHTML=renderReceive();
-  if(S.tab==='usage')   m.innerHTML=renderUsage();
-  if(S.tab==='setup')   m.innerHTML=renderSetup();
+  const inst=renderInstallOffer();
+  if(S.tab==='count')   m.innerHTML=inst+(S.historyMode ? renderHistory() : renderCount());
+  if(S.tab==='order')   m.innerHTML=inst+renderOrder();
+  if(S.tab==='receive') m.innerHTML=inst+renderReceive();
+  if(S.tab==='usage')   m.innerHTML=inst+renderUsage();
+  if(S.tab==='setup')   m.innerHTML=inst+renderSetup();
   if(S.tab==='order') scheduleDrawBarcodes();
+  syncUrlFromState();
 }
 
 function svgChevron(open){
@@ -1223,7 +1311,7 @@ function setCountView(mode){
 }
 
 function enterWalkCount(clearDraft){
-  if(clearDraft){ S.draft={}; S.walkIndex=0; }
+  if(clearDraft){ S.draft={}; S.walkIndex=0; clearOrderManualAdj(); }
   const flat=flattenWalkItems(getOrderedGroups(S.items));
   if(!flat.length){ alert('No items to count.'); return; }
   S.countView='walk';
@@ -1354,13 +1442,30 @@ function renderCount(){
         <div class="walk-breadcrumb">${escapeHtml(l1)} › ${escapeHtml(l2)}</div>
         <div class="walk-name">${escapeHtml(item.name)}</div>
         <div class="walk-meta">Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
-        <input class="walk-qty" id="walk-qty" type="number" min="0" step="0.5" value="${val}" placeholder="0" inputmode="decimal"
-          oninput="setDraft('${item.id}',this.value)" onkeydown="walkQtyKey(event)">
-        <div class="ulbl" style="margin-top:-6px;margin-bottom:6px">${escapeHtml(item.unit)}</div>
-        <div class="walk-nav">
-          <button type="button" class="btn btn-secondary" onclick="walkGo(-1)" ${S.walkIndex<=0?'disabled':''}>Previous</button>
-          <button type="button" class="btn btn-primary" onclick="walkGo(1)" ${S.walkIndex>=flat.length-1?'disabled':''}>Next</button>
+        <div class="walk-qty-strip">
+          <button type="button" class="walk-float-btn walk-float-prev" onclick="walkGo(-1)" aria-label="Previous item"${S.walkIndex<=0?' disabled':''}><span class="walk-float-icon" aria-hidden="true">‹</span><span class="walk-float-lbl">Prev</span></button>
+          <div class="walk-qty-center">
+            <input class="walk-qty" id="walk-qty" type="number" min="0" step="0.5" value="${val}" placeholder="0" inputmode="decimal"
+              oninput="setDraft('${item.id}',this.value)" onkeydown="walkQtyKey(event)">
+            <div class="ulbl" style="margin-top:4px">${escapeHtml(item.unit)}</div>
+          </div>
+          <button type="button" class="walk-float-btn walk-float-next" onclick="walkGo(1)" aria-label="Next item"${S.walkIndex>=flat.length-1?' disabled':''}><span class="walk-float-icon" aria-hidden="true">›</span><span class="walk-float-lbl">Next</span></button>
         </div>
+        ${!formLocked?(()=>{
+          const onH=countDraftOnHand(item.id);
+          const basePrev=onH===null?null:parBasedToOrder(item,onH);
+          const adjN=roundOrderAdj(parseFloat(getOrderManualAdj()[item.id])||0);
+          const comb=basePrev===null?'':Math.max(0,roundOrderAdj(basePrev+adjN));
+          return `<div class="manual-order-wrap">
+          <div class="manual-order-lbl">Manual add to recommended order</div>
+          <div class="manual-order-row">
+            <button type="button" class="btn-manual" aria-label="Decrease manual extra" onclick="bumpOrderManualAdj('${item.id}',-1)">−</button>
+            <span class="manual-order-val">${fmtManualAdj(adjN)}</span>
+            <button type="button" class="btn-manual" aria-label="Increase manual extra" onclick="bumpOrderManualAdj('${item.id}',1)">+</button>
+          </div>
+          <div class="manual-order-hint">${basePrev===null?'Enter a count above to preview par-based qty. ':'Par-based from this line: <b>'+basePrev+'</b> '+escapeHtml(item.unit)+' · '}${basePrev!==null?'<b>'+comb+'</b> would log after save (par-based + manual).':'Manual extra still applies when you save the count.'}</div>
+        </div>`;
+        })():''}
       </div>`;
     }
   }else{
@@ -1392,7 +1497,7 @@ function renderCount(){
             </button>`;
           if(open2) its.forEach(item=>{
             const val=draft[item.id]!==undefined?draft[item.id]:'';
-            h+=`<div class="item-row">
+            h+=`<div class="item-row count-item-row">
               <div>
                 <div class="item-name">${escapeHtml(item.name)}</div>
                 <div class="item-meta">Par: <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
@@ -1401,7 +1506,20 @@ function renderCount(){
                 <input class="qinput" type="number" min="0" step="0.5" id="cq-${item.id}" value="${val}" placeholder="0" oninput="setDraft('${item.id}',this.value)" onkeydown="countListQtyKeydown(event,'${item.id}')">
                 <span class="ulbl">${escapeHtml(item.unit)}</span>
               </div>
+            </div>
+            ${!formLocked?(()=>{
+              const onH=countDraftOnHand(item.id);
+              const basePrev=onH===null?null:parBasedToOrder(item,onH);
+              const adjN=roundOrderAdj(parseFloat(getOrderManualAdj()[item.id])||0);
+              const comb=basePrev===null?'':String(Math.max(0,roundOrderAdj(basePrev+adjN)));
+              return `<div class="manual-order-inline">
+              <span class="manual-order-inline-lbl">Manual +order</span>
+              <button type="button" class="btn-manual-sm" onclick="bumpOrderManualAdj('${item.id}',-1)">−</button>
+              <span class="manual-order-val-sm">${fmtManualAdj(adjN)}</span>
+              <button type="button" class="btn-manual-sm" onclick="bumpOrderManualAdj('${item.id}',1)">+</button>
+              ${basePrev!==null?`<span class="manual-order-inline-prev">log ${comb}</span>`:''}
             </div>`;
+            })():''}`;
           });
           h+='</div>';
         });
@@ -1639,7 +1757,7 @@ function renderOrder(){
     <div class="card walk-card ord-card${ack?' ord-acked':''}">
       <div class="walk-breadcrumb">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
       <div class="walk-name">${escapeHtml(item.name)}</div>
-      <div class="walk-meta">On hand <b>${item.onHand}</b> · Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
+      <div class="walk-meta">On hand <b>${item.onHand}</b> · Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b> ${escapeHtml(item.unit)}`:''} · <span class="mono">${escapeHtml(item.code)}</span></div>
       <div class="order-list-bc-row order-walk-bcs-row">
         <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating barcode…</span></div></div>
         <div class="order-list-bc-qty">
@@ -1665,7 +1783,7 @@ function renderOrder(){
         <div>
           <div class="item-name" style="font-size:14px">${escapeHtml(item.name)}</div>
           <div class="item-meta">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
-          <div class="item-meta">On hand: <span style="color:var(--ck-red-dark);font-weight:600">${item.onHand}</span> · Par: <span style="font-weight:600">${item.par}</span> ${escapeHtml(item.unit)}</div>
+          <div class="item-meta">On hand: <span style="color:var(--ck-red-dark);font-weight:600">${item.onHand}</span> · Par: <span style="font-weight:600">${item.par}</span> ${escapeHtml(item.unit)}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b>`:''}</div>
         </div>
       </div>
       <div class="order-list-bc-row">
@@ -1749,13 +1867,15 @@ function renderReceive(){
   Object.entries(order.items).forEach(([itemId,data])=>{
     const item = S.items.find(i=>i.id===itemId);
     if(!item) return;
+    const recN=parseFloat(data&&data.recommended);
+    const recDisp=Number.isFinite(recN)?recN:0;
     h+=`<div class="item-row">
       <div>
         <div class="item-name">${escapeHtml(item.name)}</div>
-        <div class="item-meta">Ordered: <span style="color:var(--ck-red);font-weight:600">${data.recommended}</span> ${escapeHtml(item.unit)}</div>
+        <div class="item-meta">Ordered: <span style="color:var(--ck-red);font-weight:600">${recDisp}</span> ${escapeHtml(item.unit)}</div>
       </div>
       <div style="display:flex;align-items:center">
-        <input class="qinput" type="number" min="0" step="0.5" id="recv-${itemId}" placeholder="${data.recommended}">
+        <input class="qinput" type="number" min="0" step="0.5" id="recv-${itemId}" placeholder="${recDisp}">
         <span class="ulbl">${escapeHtml(item.unit)}</span>
       </div>
     </div>`;
@@ -1916,15 +2036,6 @@ function renderSetup(){
     </button>
   </div>`;
 
-  if(S.installPrompt) h+=`
-  <div class="install-banner">
-    <div>
-      <div style="font-size:13px;font-weight:600">Install as App</div>
-      <div style="font-size:11px;color:#6b7280">Add to home screen for offline access</div>
-    </div>
-    <button class="btn btn-secondary btn-sm" onclick="installPWA()">Install</button>
-  </div>`;
-
   h+=`<div class="form-card" style="margin-bottom:7px">
     <button type="button" class="btn btn-secondary btn-sm" style="width:100%" onclick="toggleDeveloperInfo()" aria-expanded="${S.showDeveloperInfo?'true':'false'}">Developer Info</button>
     ${S.showDeveloperInfo?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6">
@@ -2013,10 +2124,63 @@ function fg(label,field,val,type,ph,suggestions){
   return `<div class="fg"><label class="flabel">${label}</label>${input}${dl}</div>`;
 }
 
+// ─── URL / history (hash routes: #/count, #/count/walk, #/order/walk, #/receive, …) ─
+let __ckUrlBoot=true;
+let __ckUrlApplying=false;
+
+async function loadCkLogic(){
+  if(window.__CK_LOGIC) return;
+  window.__CK_LOGIC=await import('./lib/ck-logic.mjs');
+}
+
+function applyRouteFromHash(){
+  if(__ckUrlApplying||!window.__CK_LOGIC) return;
+  const CK=window.__CK_LOGIC;
+  __ckUrlApplying=true;
+  try{
+    const {tab,sub}=CK.parseRouteHash(location.hash);
+    const valid=['count','order','receive','usage','setup'];
+    S.tab=valid.includes(tab)?tab:'count';
+    S.historyMode=S.tab==='count'&&sub==='history';
+    if(S.tab==='count'){
+      S.countView=(sub==='walk'&&!S.historyMode)?'walk':'list';
+    }else{
+      S.countView='list';
+    }
+    if(S.tab==='order') S.orderView=sub==='walk'?'walk':'list';
+    else S.orderView='list';
+    if(S.tab!=='count') S.historyMode=false;
+    const want=CK.buildRouteHash(S.tab,{countView:S.countView,orderView:S.orderView,historyMode:S.historyMode});
+    if(!location.hash||location.hash==='#'){
+      history.replaceState(null,'',location.pathname+location.search+want);
+    }
+    __ckUrlBoot=false;
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+    const tb=document.getElementById('t-'+S.tab); if(tb) tb.classList.add('on');
+  }finally{
+    __ckUrlApplying=false;
+  }
+}
+
+function syncUrlFromState(){
+  if(__ckUrlApplying||!window.__CK_LOGIC) return;
+  const CK=window.__CK_LOGIC;
+  const want=CK.buildRouteHash(S.tab,{countView:S.countView,orderView:S.orderView,historyMode:S.historyMode});
+  if(location.hash===want) return;
+  const full=location.pathname+location.search+want;
+  if(__ckUrlBoot){
+    history.replaceState(null,'',full);
+    __ckUrlBoot=false;
+  }else{
+    history.pushState(null,'',full);
+  }
+}
+
 // ─── EVENT HANDLERS ──────────────────────────────────────────────────────────
 function setTab(t){
   S.tab=t; S.historyMode=false; S.editSessionId=null;
   if(t!=='count'){ S.countView='list'; }
+  if(t!=='order'){ S.orderView='list'; }
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
   const tb=document.getElementById('t-'+t); if(tb) tb.classList.add('on');
   render();
@@ -2170,6 +2334,7 @@ async function logOrder(){
     await noteServerSynced();
     void checkStaleIfOutOfSync();
     try{ ls.set('orderAck',null); }catch{}
+    clearOrderManualAdj();
     showBanner('Order logged! Head to Receive when the truck arrives.','ok');
     setTab('receive');
   }catch(e){
@@ -2182,28 +2347,31 @@ async function logOrder(){
 
 async function confirmReceive(orderId){
   if(isAppBusy()) return;
-  const order = S.orders.find(o=>o.id===orderId);
+  const order=S.orders.find(o=>o.id===orderId);
   if(!order) return;
-  const receivedMap={};
-  Object.entries(order.items).forEach(([itemId,data])=>{
-    const inp=document.getElementById('recv-'+itemId);
-    receivedMap[itemId]=inp&&inp.value!==''?parseFloat(inp.value):data.recommended;
+  const CK=window.__CK_LOGIC;
+  const receivedMap=CK.buildReceivedQuantitiesMap(order.items, id=>{
+    const inp=document.getElementById('recv-'+id);
+    return inp?inp.value:null;
   });
+  let ok=false;
   try{
     setSyncing(true,'Confirming receipt…');
-    await db.confirmReceipt(orderId,receivedMap);
+    await db.confirmReceipt(orderId,receivedMap,order.items);
     order.status='received';
     order.received_at=new Date().toISOString();
     Object.entries(receivedMap).forEach(([id,v])=>{ if(order.items[id]) order.items[id].received=v; });
     ls.set('orders',S.orders);
     setSyncOk();
-    await noteServerSynced();
-    showBanner('Truck order received! Take your next count to track usage.','ok');
-    render();
+    ok=true;
   }catch(e){
     setSyncErr(e.message);
-    render();
   }
+  if(ok){
+    void noteServerSynced().catch(()=>{});
+    showBanner('Truck order received! Take your next count to track usage.','ok');
+  }
+  render();
 }
 
 // ITEM FORM
@@ -2263,9 +2431,90 @@ async function deleteItem(id){
   }
 }
 
-// ─── PWA INSTALL ─────────────────────────────────────────────────────────────
-function installPWA(){
-  if(S.installPrompt){ S.installPrompt.prompt(); S.installPrompt=null; render(); }
+// ─── PWA INSTALL (Android: beforeinstallprompt; iOS: manual Add to Home Screen only) ─
+function isStandalonePWA(){
+  try{
+    if(window.matchMedia('(display-mode: standalone)').matches) return true;
+    if(window.matchMedia('(display-mode: fullscreen)').matches) return true;
+    if(window.matchMedia('(display-mode: minimal-ui)').matches) return true;
+    if(typeof navigator.standalone==='boolean'&&navigator.standalone) return true;
+  }catch{}
+  return false;
+}
+
+function isLikelyIOS(){
+  const ua=navigator.userAgent||'';
+  if(/iPad|iPhone|iPod/.test(ua)) return true;
+  if(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1) return true;
+  return false;
+}
+
+function isLikelyAndroid(){
+  return /Android/i.test(navigator.userAgent||'');
+}
+
+function installBannerDismissedThisSession(){
+  try{ return sessionStorage.getItem('ck_install_banner_dismissed')==='1'; }catch{ return false; }
+}
+
+function dismissInstallOffer(){
+  try{ sessionStorage.setItem('ck_install_banner_dismissed','1'); }catch{}
+  render();
+}
+
+/** Prepended on every main tab so iPhone users see how to install (no native install banner on Safari). */
+function renderInstallOffer(){
+  if(isStandalonePWA()) return '';
+  if(installBannerDismissedThisSession()) return '';
+  if(S.installPrompt){
+    return `<div class="install-banner install-banner--chrome" role="region" aria-label="Install app">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">Install CK Inventory</div>
+        <div style="font-size:11px;color:#6b7280;line-height:1.4;margin-top:2px">Add this app to your home screen for quick access and offline use.</div>
+      </div>
+      <div class="install-banner-actions">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="dismissInstallOffer()">Not now</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="installPWA()">Install</button>
+      </div>
+    </div>`;
+  }
+  if(isLikelyIOS()){
+    return `<div class="install-banner install-banner--ios" role="region" aria-label="Add to Home Screen">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">Add to Home Screen (iPhone / iPad)</div>
+        <div style="font-size:11px;color:#374151;line-height:1.45;margin-top:3px">Tap the <b>Share</b> button <span aria-hidden="true">(square with arrow up)</span>, scroll the menu, then tap <b>Add to Home Screen</b> → Add. For the most reliable install, open this page in <b>Safari</b>. Apple does not offer an automatic install banner like Chrome on Android.</div>
+      </div>
+      <div class="install-banner-actions">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="dismissInstallOffer()">Dismiss</button>
+      </div>
+    </div>`;
+  }
+  if(isLikelyAndroid()){
+    return `<div class="install-banner install-banner--android" role="region" aria-label="Install app on Android">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">Install on this Android device</div>
+        <div style="font-size:11px;color:#374151;line-height:1.45;margin-top:3px">If no <b>Install</b> button appears above, open your browser’s <b>⋮</b> menu and choose <b>Install app</b>, <b>Add to Home screen</b>, or similar. Chrome may show its own install offer after you use the app briefly.</div>
+      </div>
+      <div class="install-banner-actions">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="dismissInstallOffer()">Dismiss</button>
+      </div>
+    </div>`;
+  }
+  return '';
+}
+
+async function installPWA(){
+  const ev=S.installPrompt;
+  if(!ev) return;
+  try{
+    await ev.prompt();
+    const choice=await ev.userChoice;
+    if(choice&&choice.outcome==='accepted') showBanner('App installed — look for CK on your home screen.','ok');
+  }catch(e){
+    showBanner('Install was cancelled or is not available in this browser.','warn');
+  }
+  S.installPrompt=null;
+  render();
 }
 
 // ─── TESTS ───────────────────────────────────────────────────────────────────
@@ -2414,6 +2663,7 @@ function loadFromCache(){
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function finishBoot(){
   await loadFromDB();
+  applyRouteFromHash();
   document.getElementById('loading-overlay').style.display='none';
   render();
   startStaleWatcher();
@@ -2426,11 +2676,26 @@ async function finishBoot(){
 }
 
 async function init(){
+  await loadCkLogic();
+
+  window.addEventListener('popstate',()=>{
+    applyRouteFromHash();
+    render();
+  });
+
   setInterval(updateScheduleChip, 30000);
 
   window.addEventListener('beforeinstallprompt',e=>{
-    S.installPrompt=e; e.preventDefault();
-    if(S.tab==='setup') render();
+    e.preventDefault();
+    S.installPrompt=e;
+    render();
+  });
+
+  window.addEventListener('appinstalled',()=>{
+    S.installPrompt=null;
+    try{ sessionStorage.setItem('ck_install_banner_dismissed','1'); }catch{}
+    showBanner('App installed successfully.','ok');
+    render();
   });
 
   if('serviceWorker' in navigator){
