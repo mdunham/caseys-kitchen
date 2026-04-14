@@ -73,6 +73,10 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .count-item-row{transition:background .18s ease,box-shadow .18s ease,border-radius .18s ease}
 .count-item-row:focus-within{background:linear-gradient(90deg,var(--ck-red-soft) 0%,#fff 55%);box-shadow:inset 4px 0 0 var(--ck-red);border-radius:8px}
 .count-item-row:focus-within .item-name{font-weight:800;color:var(--ck-red-dark)}
+.count-cog-btn{width:36px;height:36px;padding:0;border-radius:9px;border:1px solid var(--ck-line);background:#fff;color:#6b7280;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation;flex-shrink:0;font:inherit}
+.count-cog-btn:active{opacity:.88}
+.count-cog-btn.on{color:var(--ck-red-dark);border-color:var(--ck-red);background:var(--ck-red-soft)}
+.count-cog-btn svg{width:18px;height:18px}
 .l1-block{margin-bottom:8px}
 .l1-hdr{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 10px;background:#fff;border:1px solid var(--ck-line);border-radius:10px;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px}
 .l1-hdr:active{background:#fafafa}
@@ -401,6 +405,8 @@ const S = {
   staleCheckInFlight: false,
   /** When false, the count form is covered until "Start new count" is used */
   countFormActive: false,
+  /** Count tab: show manual “extra for truck order” UI (toggled via header cog) */
+  countManualOrderOpen: false,
   /** Setup tab: show database status & tests (hidden by default) */
   showDeveloperInfo: false,
 };
@@ -1299,6 +1305,11 @@ function svgChevron(open){
 }
 
 // ── COUNT TAB ────────────────────────────────────────────────────────────────
+function toggleCountManualOrder(){
+  S.countManualOrderOpen=!S.countManualOrderOpen;
+  render();
+}
+
 function setCountView(mode){
   S.countView=mode;
   if(mode==='walk'){
@@ -1311,7 +1322,7 @@ function setCountView(mode){
 }
 
 function enterWalkCount(clearDraft){
-  if(clearDraft){ S.draft={}; S.walkIndex=0; clearOrderManualAdj(); }
+  if(clearDraft){ S.draft={}; S.walkIndex=0; clearOrderManualAdj(); S.countManualOrderOpen=false; }
   const flat=flattenWalkItems(getOrderedGroups(S.items));
   if(!flat.length){ alert('No items to count.'); return; }
   S.countView='walk';
@@ -1363,7 +1374,12 @@ function walkPickL2(l2){
 }
 
 function walkQtyKey(ev){
-  if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); walkGo(1); }
+  if(ev.key==='Enter'&&!ev.shiftKey){ ev.preventDefault(); walkGo(1); return; }
+  if(ev.key==='Tab'){
+    ev.preventDefault();
+    if(ev.shiftKey) walkGo(-1);
+    else walkGo(1);
+  }
 }
 
 /** Tab / Shift+Tab between qty fields in category order; opens collapsed sections when needed */
@@ -1406,6 +1422,9 @@ function renderCount(){
     <div><div class="pg-title">Inventory Count</div><div class="pg-sub">${lastSess?'Last: '+fmtDate(lastSess.counted_at):'No previous counts'}</div></div>
     <div style="display:flex;gap:6px;align-items:center">
       <span class="badge">${counted}/${items.length}</span>
+      ${!formLocked?`<button type="button" class="count-cog-btn${S.countManualOrderOpen?' on':''}" onclick="toggleCountManualOrder()" aria-label="Manual truck order extras" aria-pressed="${S.countManualOrderOpen?'true':'false'}" title="Show or hide manual add to recommended order">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>`:''}
       <button class="btn btn-secondary btn-sm" onclick="toggleHistory()">History</button>
     </div>
   </div>
@@ -1451,7 +1470,7 @@ function renderCount(){
           </div>
           <button type="button" class="walk-float-btn walk-float-next" onclick="walkGo(1)" aria-label="Next item"${S.walkIndex>=flat.length-1?' disabled':''}><span class="walk-float-icon" aria-hidden="true">›</span><span class="walk-float-lbl">Next</span></button>
         </div>
-        ${!formLocked?(()=>{
+        ${!formLocked&&S.countManualOrderOpen?(()=>{
           const onH=countDraftOnHand(item.id);
           const basePrev=onH===null?null:parBasedToOrder(item,onH);
           const adjN=roundOrderAdj(parseFloat(getOrderManualAdj()[item.id])||0);
@@ -1507,7 +1526,7 @@ function renderCount(){
                 <span class="ulbl">${escapeHtml(item.unit)}</span>
               </div>
             </div>
-            ${!formLocked?(()=>{
+            ${!formLocked&&S.countManualOrderOpen?(()=>{
               const onH=countDraftOnHand(item.id);
               const basePrev=onH===null?null:parBasedToOrder(item,onH);
               const adjN=roundOrderAdj(parseFloat(getOrderManualAdj()[item.id])||0);
@@ -2293,6 +2312,7 @@ async function completeInventory(){
     S.draft={};
     S.countView='list';
     S.countFormActive=false;
+    S.countManualOrderOpen=false;
     showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
     setTab('order');
   }catch(e){
@@ -2302,6 +2322,7 @@ async function completeInventory(){
     S.draft={};
     S.countView='list';
     S.countFormActive=false;
+    S.countManualOrderOpen=false;
     render();
   }
 }
