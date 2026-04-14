@@ -289,7 +289,7 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
     <div class="pin-box">
       <div class="pin-title" id="pin-title">Store access</div>
       <div class="pin-sub">Enter the 4-digit store PIN to continue.</div>
-      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="PIN" onkeydown="if(event.key==='Enter')submitStorePin()">
+      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="PIN" onkeydown="if(event.key==='Enter')submitStorePin()" oninput="onStorePinInput()">
       <div id="pin-err" class="pin-err" role="alert"></div>
       <div class="pin-actions">
         <button type="button" class="btn btn-primary" style="width:100%" onclick="submitStorePin()">Unlock</button>
@@ -429,41 +429,38 @@ const db = {
 
   async loadAll(){
     if(!sb) throw new Error('No database connection');
+    const CK=window.__CK_LOGIC;
+    if(!CK) throw new Error('App logic not loaded');
     // Load items
     const {data:items,error:ie} = await sb.from('ck_items').select('*').order('sort_order');
     if(ie) throw ie;
-    // Load sessions + counts
-    const {data:sessions,error:se} = await sb.from('ck_sessions').select('*').order('counted_at',{ascending:false});
+    // Bounded history: avoids loading years of ck_counts / ck_order_items into RAM + localStorage.
+    const capS=CK.LOAD_CAP_SESSIONS;
+    const capO=CK.LOAD_CAP_ORDERS;
+    const {data:sessions,error:se} = await sb.from('ck_sessions').select('*').order('counted_at',{ascending:false}).limit(capS);
     if(se) throw se;
-    const {data:counts,error:ce} = await sb.from('ck_counts').select('*');
-    if(ce) throw ce;
-    // Load orders + order_items
-    const {data:orders,error:oe} = await sb.from('ck_orders').select('*').order('ordered_at',{ascending:false});
+    const sessArr=sessions||[];
+    const sessionIds=sessArr.map(s=>s.id);
+    let counts=[];
+    if(sessionIds.length){
+      const {data:ce,error:ceErr}=await sb.from('ck_counts').select('*').in('session_id',sessionIds);
+      if(ceErr) throw ceErr;
+      counts=ce||[];
+    }
+    const {data:orders,error:oe} = await sb.from('ck_orders').select('*').order('ordered_at',{ascending:false}).limit(capO);
     if(oe) throw oe;
-    const {data:oitems,error:oie} = await sb.from('ck_order_items').select('*');
-    if(oie) throw oie;
-
-    // Denormalize
-    const sessMap = {};
-    sessions.forEach(s=>{ sessMap[s.id]={...s,counts:{}}; });
-    counts.forEach(c=>{ if(sessMap[c.session_id]) sessMap[c.session_id].counts[c.item_id]=c.count; });
-
-    const ordMap = {};
-    orders.forEach(o=>{ ordMap[o.id]={...o,items:{}}; });
-    oitems.forEach(i=>{
-      if(!ordMap[i.order_id]) return;
-      const rec=i.recommended!=null&&i.recommended!==''?parseFloat(i.recommended):0;
-      const recv=i.received!=null&&i.received!==''?parseFloat(i.received):null;
-      ordMap[i.order_id].items[i.item_id]={
-        recommended:Number.isFinite(rec)?rec:0,
-        received:Number.isFinite(recv)?recv:null
-      };
-    });
-
+    const ordArr=orders||[];
+    const orderIds=ordArr.map(o=>o.id);
+    let oitems=[];
+    if(orderIds.length){
+      const {data:oie,error:oieErr}=await sb.from('ck_order_items').select('*').in('order_id',orderIds);
+      if(oieErr) throw oieErr;
+      oitems=oie||[];
+    }
     return {
       items: items||[],
-      sessions: Object.values(sessMap).sort((a,b)=>new Date(b.counted_at)-new Date(a.counted_at)),
-      orders: Object.values(ordMap).sort((a,b)=>new Date(b.ordered_at)-new Date(a.ordered_at))
+      sessions: CK.denormalizeSessions(sessArr,counts),
+      orders: CK.denormalizeOrders(ordArr,oitems)
     };
   },
 
@@ -733,6 +730,13 @@ async function staleSyncDismiss(){
   if(fp!==null) S.lastRemoteFingerprint=fp;
 }
 
+function onStorePinInput(){
+  const input=document.getElementById('pin-input');
+  if(!input) return;
+  const v=String(input.value||'').replace(/\D/g,'');
+  if(v.length===4) submitStorePin();
+}
+
 async function submitStorePin(){
   const input=document.getElementById('pin-input');
   const errEl=document.getElementById('pin-err');
@@ -740,6 +744,8 @@ async function submitStorePin(){
   const v=raw.replace(/\D/g,'');
   if(v!==STORE_PIN){
     if(errEl) errEl.textContent='Incorrect PIN.';
+    if(input) input.value='';
+    requestAnimationFrame(()=>{ try{ input&&input.focus(); }catch{} });
     return;
   }
   if(errEl) errEl.textContent='';
@@ -1276,6 +1282,8 @@ async function deletePendingOrderForLatest(){
   on each render(). That pattern is simple but re-parses the whole main column on every state change,
   which is the main source of “lag” on slower phones. Mitigations in this file: debounced barcode
   generation (small QR codes via qrcodejs), guarding heavy work to the active tab, and keeping renders purposeful (no extra polls).
+  Data sync: db.loadAll() pulls only the newest LOAD_CAP_SESSIONS sessions and LOAD_CAP_ORDERS orders (see lib/ck-logic.mjs),
+  with counts/order_items restricted to those ids — so months or years of history do not blow RAM or the ~5MB localStorage mirror.
   Larger wins later: incremental DOM updates, a small component layer, or virtualizing long Setup lists.
 */
 let __drawBcTimer=null;
