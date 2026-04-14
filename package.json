@@ -1,5 +1,5 @@
 {
-  "name": "caseys-kitchen",
+  "name": "ck-inventory",
   "private": true,
   "scripts": {
     "gen-icons": "node scripts/gen-icons.cjs",

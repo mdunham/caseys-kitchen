@@ -1,4 +1,4 @@
--- Casey's Kitchen Inventory — Supabase Schema Setup
+-- CK Inventory — Supabase Schema Setup
 -- Run this once in your Supabase SQL Editor (https://supabase.com/dashboard/project/lzhawmvgkylumwcseltb/sql)
 
 create table if not exists ck_items (

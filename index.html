@@ -13,7 +13,7 @@
 <link rel="icon" href="./favicon.ico" sizes="48x48" type="image/x-icon">
 <link rel="icon" href="./icon.svg" type="image/svg+xml" sizes="any">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png" sizes="180x180">
-<title>Casey's Kitchen</title>
+<title>CK Inventory</title>
 <style>
 :root{
   --ck-red:#ED1C24;
@@ -311,9 +311,9 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
     <span id="loading-msg">Connecting to database…</span>
   </div>
   <div class="hdr">
-    <button type="button" class="logo" onclick="setTab('setup')" aria-label="Open Setup" title="Setup — items &amp; options">
+    <button type="button" class="logo" onclick="setTab('count')" aria-label="Open Count" title="Count — inventory">
       <span class="logo-dot">CK</span>
-      Casey's Kitchen
+      CK Inventory
     </button>
     <div class="hdr-right">
       <span id="sched-chip" class="chip chip-gray"></span>
@@ -358,7 +358,7 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 const SB_URL = 'https://lzhawmvgkylumwcseltb.supabase.co';
 const SB_KEY = 'sb_publishable_lVS5Yjtzu_t6c9LKDYTuLA_vGWL_gcC';
 
-/** Store PIN (Casey's store #) — session only, not persisted across browser restarts */
+/** Store PIN (four-digit access) — session only, not persisted across browser restarts */
 const STORE_PIN = '1406';
 const SS_PIN_KEY = 'ck2_store1406';
 
@@ -1209,6 +1209,12 @@ function recommendedOrderLines(){
   return computeOrder().filter(it=>!ex.has(it.id));
 }
 
+/** Lines shown on Order (walk/list/QR/acks): full reco while a pending order exists for reference; otherwise respects removals. */
+function orderTabLineItems(){
+  if(pendingOrderForLatestCount()) return computeOrder();
+  return recommendedOrderLines();
+}
+
 function persistOrderRecExcludedSet(exSet){
   const sid=S.sessions[0]?.id;
   if(!sid) return;
@@ -1219,7 +1225,7 @@ function persistOrderRecExcludedSet(exSet){
 }
 
 function excludeRecommendedLine(itemId){
-  if(!S.sessions.length) return;
+  if(!S.sessions.length||pendingOrderForLatestCount()) return;
   const raw=computeOrder();
   if(!raw.some(i=>i.id===itemId)) return;
   const ex=getOrderRecExcludedSet();
@@ -1268,7 +1274,7 @@ function setOrderListHideScanned(v){
 }
 
 function toggleOrderAck(itemId){
-  const items=recommendedOrderLines();
+  const items=orderTabLineItems();
   if(!items.some(i=>i.id===itemId)) return;
   const sig=orderRecSig(items);
   const cur=getOrderAckFlags(items);
@@ -1287,7 +1293,7 @@ function toggleOrderAck(itemId){
 
 function setOrderView(mode){
   S.orderView=mode;
-  const oi=recommendedOrderLines();
+  const oi=orderTabLineItems();
   if(mode==='walk'){
     if(!oi.length){ S.orderView='list'; render(); return; }
     S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,oi.length-1));
@@ -1297,7 +1303,7 @@ function setOrderView(mode){
 }
 
 function orderWalkGo(delta){
-  const oi=computeOrder();
+  const oi=orderTabLineItems();
   if(!oi.length) return;
   S.orderWalkIndex=Math.max(0,Math.min(oi.length-1,S.orderWalkIndex+delta));
   render();
@@ -1305,7 +1311,7 @@ function orderWalkGo(delta){
 }
 
 function orderWalkPick(ix){
-  const oi=computeOrder();
+  const oi=orderTabLineItems();
   const n=parseInt(ix,10);
   if(!Number.isFinite(n)||n<0||n>=oi.length) return;
   S.orderWalkIndex=n;
@@ -1783,10 +1789,13 @@ function renderOrder(){
 
   if(!S.sessions.length) return h+`<div class="empty">Take an inventory count first to generate an order.</div>`;
   const last = S.sessions[0];
-  const orderItems = computeOrder();
+  const rawRecommended = computeOrder();
   const pendingAll=S.orders.filter(o=>o.status==='pending');
   const pendingForLatest=pendingOrderForLatestCount();
   const otherPending=pendingAll.filter(o=>o!==pendingForLatest);
+  const ex=getOrderRecExcludedSet();
+  const orderItems=pendingForLatest?rawRecommended:rawRecommended.filter(it=>!ex.has(it.id));
+  const removedFromOrder=pendingForLatest?[]:rawRecommended.filter(it=>ex.has(it.id));
 
   h+=`<div class="banner banner-info" style="margin-bottom:7px">Based on count from ${fmtDate(last.counted_at)}</div>`;
 
@@ -1806,10 +1815,31 @@ function renderOrder(){
     h+=`<div class="banner banner-warn" style="margin-bottom:7px">A pending order is still on file from an older count. Review or receive it on the Receive tab.</div>`;
   }
 
-  if(!orderItems.length && !pendingForLatest){
+  if(!rawRecommended.length && !pendingForLatest){
     return h+`<div class="empty" style="color:#166534">✓ All items at or above par — no order needed!</div>`;
   }
-  if(!orderItems.length && pendingForLatest){
+  if(rawRecommended.length && !orderItems.length && !pendingForLatest){
+    h+=`<div class="banner banner-info" style="margin-bottom:8px;line-height:1.45">Every recommended line is set to <strong>not order</strong> for this run. Tap <strong>Restore</strong> on a line to put it back on the list.</div>`;
+    removedFromOrder.forEach(it=>{
+      h+=`<div class="card" style="margin-bottom:6px;opacity:.92">
+        <div class="item-name" style="font-size:14px">${escapeHtml(it.name)}</div>
+        <div class="item-meta">${escapeHtml(it.cat_l1)} › ${escapeHtml(it.cat_l2)} · would order <b>${it.toOrder}</b> ${escapeHtml(it.unit)}</div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="restoreRecommendedLine('${it.id}')">Restore to order</button>
+      </div>`;
+    });
+    h+=`<div class="sticky-footer">
+    <div class="sticky-footer-row">
+      <button class="btn btn-secondary" onclick="window.print()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Print
+      </button>
+      <button class="btn btn-primary" disabled title="Restore at least one line to log an order">Log Order Placed</button>
+    </div>
+    ${stickyFooterCopyright()}
+  </div>`;
+    return h;
+  }
+  if(!rawRecommended.length && pendingForLatest){
     h+=`<div class="empty" style="padding-top:4px">No lines below par to recommend. Delete the saved order above if you need to log a different order from this same count.</div>
   <div class="sticky-footer">
     <div class="sticky-footer-row">
@@ -1874,6 +1904,9 @@ function renderOrder(){
         <button type="button" class="btn btn-secondary" onclick="orderWalkGo(-1)" ${S.orderWalkIndex<=0?'disabled':''}>Previous</button>
         <button type="button" class="btn btn-primary" onclick="orderWalkGo(1)" ${S.orderWalkIndex>=n-1?'disabled':''}>Next</button>
       </div>
+      ${pendingForLatest?'':`<div style="margin-top:10px;text-align:center">
+        <button type="button" class="btn btn-ghost btn-sm" style="color:#6b7280" onclick="excludeRecommendedLine('${item.id}')">Remove from this order</button>
+      </div>`}
     </div>`;
   }else{
     const listItems=S.orderListHideScanned?orderItems.filter(it=>!flags[it.id]):orderItems;
@@ -1898,8 +1931,23 @@ function renderOrder(){
         </div>
         <button type="button" class="order-ack-btn order-ack-btn-list${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
       </div>
+      ${pendingForLatest?'':`<div style="margin-top:8px;text-align:center">
+        <button type="button" class="btn btn-ghost btn-sm" style="color:#6b7280" onclick="excludeRecommendedLine('${item.id}')">Remove from this order</button>
+      </div>`}
     </div>`;
     });
+  }
+
+  if(removedFromOrder.length&&orderItems.length){
+    h+=`<div class="order-removed-strip" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--ck-line)">
+      <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px">Not ordering this round (${removedFromOrder.length})</div>`;
+    removedFromOrder.forEach(it=>{
+      h+=`<div class="order-removed-row" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:12px">
+        <span>${escapeHtml(it.name)} <span style="color:#9ca3af">· ${it.toOrder} ${escapeHtml(it.unit)}</span></span>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="restoreRecommendedLine('${it.id}')">Restore</button>
+      </div>`;
+    });
+    h+=`</div>`;
   }
 
   h+=`<div class="sticky-footer">
@@ -1921,7 +1969,7 @@ function renderOrder(){
 function drawBarcodes(){
   if(S.tab!=='order') return;
   const QCtor=typeof globalThis!=='undefined'?globalThis.QRCode:null;
-  const orderItems=computeOrder();
+  const orderItems=orderTabLineItems();
   for(const item of orderItems){
     const wrap=document.getElementById('bc-'+item.id);
     if(!wrap||!item.code) continue;
@@ -2502,8 +2550,11 @@ async function logOrder(){
     showBanner('An order is already logged for this count. Delete it on the Order tab first, or confirm it on Receive.','warn');
     return;
   }
-  const orderItems = computeOrder();
-  if(!orderItems.length) return;
+  const orderItems = recommendedOrderLines();
+  if(!orderItems.length){
+    showBanner('No lines left on this order — restore a removed item or nothing will be saved.','warn');
+    return;
+  }
   const ackFlags=getOrderAckFlags(orderItems);
   const allScanned=orderItems.every(it=>!!ackFlags[it.id]);
   if(!allScanned){
@@ -2525,6 +2576,7 @@ async function logOrder(){
     void checkStaleIfOutOfSync();
     try{ ls.set('orderAck',null); }catch{}
     clearOrderManualAdj();
+    clearOrderRecExcludedForSession(sessionId);
     showBanner('Order logged! Head to Receive when the truck arrives.','ok');
     setTab('receive');
   }catch(e){
