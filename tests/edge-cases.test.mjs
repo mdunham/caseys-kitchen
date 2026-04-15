@@ -100,6 +100,30 @@ describe('computeOrderLines — predicted bad data from DB or local edits', () =
     expect(lines[0].onHand).toBe(0);
     expect(lines[0].toOrder).toBe(10);
   });
+
+  it('applies case-pack math and trigger thresholds', () => {
+    const lines = computeOrderLines(
+      [{ id: 'g', name: 'Gloves', par: 8, order_pack_qty: 8, order_unit: 'case', reorder_trigger: 4 }],
+      { g: 3.8 },
+      {},
+      ['g'],
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0].orderParBase).toBe(1);
+    expect(lines[0].toOrder).toBe(1);
+    expect(lines[0].orderUnit).toBe('case');
+    expect(lines[0].countedUnitsPerOrderUnit).toBe(8);
+  });
+
+  it('suppresses recommendation when above trigger even if below par', () => {
+    const lines = computeOrderLines(
+      [{ id: 'g', name: 'Gloves', par: 8, order_pack_qty: 8, order_unit: 'case', reorder_trigger: 4 }],
+      { g: 4.4 },
+      {},
+      ['g'],
+    );
+    expect(lines).toHaveLength(0);
+  });
 });
 
 describe('normalizeReceivedQuantity — hostile or mistaken input', () => {
