@@ -129,6 +129,14 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .setup-l1-tools{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .item-name{font-size:12px;font-weight:600;margin-bottom:0;line-height:1.25}
 .item-meta{font-size:11px;color:#9ca3af}
+.setup-code-chip{display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;border:1px dashed #d1d5db;background:#f9fafb;color:#374151;cursor:pointer}
+.setup-code-edit{display:inline-flex;align-items:center;gap:4px;max-width:100%}
+.setup-code-input{width:110px;max-width:100%;padding:3px 7px;border-radius:7px;border:1px solid var(--ck-line);font-size:12px;font-family:'SF Mono',monospace;outline:none}
+.setup-code-input:focus{border-color:var(--ck-red);background:#fff}
+.setup-code-actions{display:inline-flex;align-items:center;gap:4px}
+.setup-code-btn{display:inline-flex;align-items:center;justify-content:center;min-width:42px;padding:3px 6px;border-radius:7px;border:1px solid var(--ck-line);font-size:10px;font-weight:600;font-family:inherit;cursor:pointer}
+.setup-code-btn.save{background:var(--ck-red);border-color:var(--ck-red);color:#fff}
+.setup-code-btn.cancel{background:#fff;color:#6b7280}
 .mono{font-family:'SF Mono',monospace;font-size:10px}
 .qinput{width:58px;padding:5px 5px;background:#f9fafb;border:1px solid var(--ck-line);border-radius:7px;color:#111;font-size:14px;font-family:'SF Mono',monospace;font-weight:600;text-align:center;outline:none;transition:border-color .15s}
 .qinput:focus{border-color:var(--ck-red);background:#fff}
@@ -289,7 +297,7 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
     <div class="pin-box">
       <div class="pin-title" id="pin-title">Store access</div>
       <div class="pin-sub">Enter the 4-digit store PIN to continue.</div>
-      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="PIN" onkeydown="if(event.key==='Enter')submitStorePin()" oninput="onStorePinInput()">
+      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" autofocus aria-label="PIN" onkeydown="if(event.key==='Enter')submitStorePin()" oninput="onStorePinInput()">
       <div id="pin-err" class="pin-err" role="alert"></div>
       <div class="pin-actions">
         <button type="button" class="btn btn-primary" style="width:100%" onclick="submitStorePin()">Unlock</button>
@@ -409,6 +417,12 @@ const S = {
   countManualOrderOpen: false,
   /** Setup tab: show database status & tests (hidden by default) */
   showDeveloperInfo: false,
+  /** Setup tab: inline quick edit for item order code */
+  setupCodeEditId: null,
+  setupCodeDraft: '',
+  setupCodeSavingId: null,
+  setupCodeLastTapId: null,
+  setupCodeLastTapAt: 0,
 };
 
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
@@ -730,6 +744,20 @@ async function staleSyncDismiss(){
   if(fp!==null) S.lastRemoteFingerprint=fp;
 }
 
+function focusStorePinInput(){
+  const input=document.getElementById('pin-input');
+  if(!input) return;
+  const runFocus=()=>{
+    try{
+      input.focus({preventScroll:true});
+      if(typeof input.select==='function') input.select();
+    }catch{}
+  };
+  requestAnimationFrame(runFocus);
+  setTimeout(runFocus,80);
+  setTimeout(runFocus,220);
+}
+
 function onStorePinInput(){
   const input=document.getElementById('pin-input');
   if(!input) return;
@@ -745,7 +773,7 @@ async function submitStorePin(){
   if(v!==STORE_PIN){
     if(errEl) errEl.textContent='Incorrect PIN.';
     if(input) input.value='';
-    requestAnimationFrame(()=>{ try{ input&&input.focus(); }catch{} });
+    focusStorePinInput();
     return;
   }
   if(errEl) errEl.textContent='';
@@ -2313,6 +2341,20 @@ function renderSetup(){
           </div>
         </div>`;
       s.items.forEach(item=>{
+        const editingCode=S.setupCodeEditId===item.id;
+        const codeLabel=String(item.code||'').trim()||'No code';
+        const codeDisplay=editingCode
+          ? `<span class="setup-code-edit">
+              <input id="setup-code-input-${item.id}" class="setup-code-input" type="text" value="${escapeHtml(S.setupCodeDraft)}" aria-label="Order code for ${escapeHtml(item.name)}" oninput="setQuickEditItemCodeDraft(this.value)" onkeydown="quickEditItemCodeKeydown(event,'${item.id}')" onblur="quickEditItemCodeBlur(event,'${item.id}')">
+              <span class="setup-code-actions">
+                <button type="button" class="setup-code-btn save" onclick="commitQuickEditItemCode('${item.id}')" ${S.setupCodeSavingId===item.id?'disabled':''}>Save</button>
+                <button type="button" class="setup-code-btn cancel" onclick="cancelQuickEditItemCode()" ${S.setupCodeSavingId===item.id?'disabled':''}>Cancel</button>
+              </span>
+            </span>`
+          : `<span class="setup-code-chip mono" role="button" tabindex="0" title="Double-click or double-tap to edit order code"
+               onclick="handleQuickEditItemCodeTap(event,'${item.id}')"
+               ondblclick="startQuickEditItemCode('${item.id}')"
+               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();startQuickEditItemCode('${item.id}')}">${escapeHtml(codeLabel)}</span>`;
         h+=`<div class="item-row">
           <div class="reorder-btns" aria-label="Reorder item">
             <button type="button" onclick="moveItemInGroup(JSON.parse(decodeURIComponent('${encAttr(l1)}')),JSON.parse(decodeURIComponent('${encAttr(l2)}')),JSON.parse(decodeURIComponent('${encAttr(item.id)}')),-1)">↑</button>
@@ -2320,7 +2362,7 @@ function renderSetup(){
           </div>
           <div style="flex:1;min-width:0">
             <div class="item-name">${escapeHtml(item.name)}</div>
-            <div class="item-meta">Par: ${item.par} ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
+            <div class="item-meta">Par: ${item.par} ${escapeHtml(item.unit)} · ${codeDisplay}</div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
             <button class="btn btn-secondary btn-sm" onclick="startEdit('${item.id}')">
@@ -2617,14 +2659,120 @@ async function confirmReceive(orderId){
 }
 
 // ITEM FORM
-function startAdd(){ S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',code:''}; render(); }
+function clearQuickEditItemCode(){
+  S.setupCodeEditId=null;
+  S.setupCodeDraft='';
+  S.setupCodeSavingId=null;
+  S.setupCodeLastTapId=null;
+  S.setupCodeLastTapAt=0;
+}
+
+function handleQuickEditItemCodeTap(_ev,id){
+  if(S.setupCodeEditId||isAppBusy()) return;
+  const now=Date.now();
+  const isDoubleTap=S.setupCodeLastTapId===id && (now-S.setupCodeLastTapAt)<=420;
+  if(isDoubleTap){
+    S.setupCodeLastTapId=null;
+    S.setupCodeLastTapAt=0;
+    startQuickEditItemCode(id);
+    return;
+  }
+  S.setupCodeLastTapId=id;
+  S.setupCodeLastTapAt=now;
+}
+
+function focusSetupCodeInput(itemId){
+  requestAnimationFrame(()=>{
+    const input=document.getElementById(`setup-code-input-${itemId}`);
+    if(!input) return;
+    try{
+      input.focus({preventScroll:true});
+      input.select();
+    }catch{}
+  });
+}
+
+function startQuickEditItemCode(id){
+  const item=S.items.find(i=>i.id===id);
+  if(!item||isAppBusy()) return;
+  S.setupCodeEditId=id;
+  S.setupCodeDraft=String(item.code||'');
+  S.setupCodeSavingId=null;
+  render();
+  focusSetupCodeInput(id);
+}
+
+function setQuickEditItemCodeDraft(v){
+  S.setupCodeDraft=String(v??'');
+}
+
+function quickEditItemCodeKeydown(ev,id){
+  if(ev.key==='Escape'){
+    ev.preventDefault();
+    cancelQuickEditItemCode();
+    return;
+  }
+  if(ev.key==='Enter'){
+    ev.preventDefault();
+    void commitQuickEditItemCode(id);
+  }
+}
+
+function quickEditItemCodeBlur(ev,id){
+  if(!S.setupCodeEditId||S.setupCodeEditId!==id) return;
+  const next=ev&&ev.relatedTarget;
+  if(next&&next.closest&&next.closest('.setup-code-actions')) return;
+  void commitQuickEditItemCode(id);
+}
+
+function cancelQuickEditItemCode(){
+  if(S.setupCodeSavingId) return;
+  clearQuickEditItemCode();
+  render();
+}
+
+async function commitQuickEditItemCode(id){
+  if(S.setupCodeEditId!==id||S.setupCodeSavingId===id||isAppBusy()) return;
+  const idx=S.items.findIndex(i=>i.id===id);
+  if(idx<0){ clearQuickEditItemCode(); render(); return; }
+  const item=S.items[idx];
+  const nextCode=String(S.setupCodeDraft||'').trim();
+  const currentCode=String(item.code||'').trim();
+  if(nextCode===currentCode){
+    clearQuickEditItemCode();
+    render();
+    return;
+  }
+  const updated={...item,code:nextCode};
+  S.setupCodeSavingId=id;
+  render();
+  try{
+    setSyncing(true,'Saving order code…');
+    await db.upsertItem(updated);
+    S.items[idx]=updated;
+    ls.set('items',S.items);
+    setSyncOk();
+    await noteServerSynced();
+    clearQuickEditItemCode();
+    showBanner('Order code updated.','ok');
+    render();
+  }catch(e){
+    S.setupCodeSavingId=null;
+    setSyncErr(e.message);
+    render();
+    focusSetupCodeInput(id);
+  }
+}
+
+function startAdd(){ clearQuickEditItemCode(); S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',code:''}; render(); }
 function startEdit(id){
+  clearQuickEditItemCode();
   const item=S.items.find(i=>i.id===id); if(!item) return;
   S.formView='edit'; S.editItemId=id;
   S.formData={name:item.name,cat_l1:item.cat_l1,cat_l2:item.cat_l2,par:String(item.par),unit:item.unit,code:item.code};
   render();
 }
-function cancelForm(){ S.formView=null; S.editItemId=null; S.formData=null; render(); }
+function cancelForm(){ clearQuickEditItemCode(); S.formView=null; S.editItemId=null; S.formData=null; render(); }
 function updateForm(f,v){ if(!S.formData) S.formData={}; S.formData[f]=v; }
 
 async function saveItem(){
@@ -2958,7 +3106,8 @@ async function init(){
     const pi=document.getElementById('pin-input');
     const er=document.getElementById('pin-err');
     if(er) er.textContent='';
-    if(pi){ pi.value=''; setTimeout(()=>pi.focus(),80); }
+    if(pi) pi.value='';
+    focusStorePinInput();
     return;
   }
   await finishBoot();
