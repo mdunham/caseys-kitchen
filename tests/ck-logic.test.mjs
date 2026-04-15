@@ -24,6 +24,13 @@ describe('parBasedToOrder', () => {
     expect(parBasedToOrder({ par: 5 }, 5)).toBe(0);
     expect(parBasedToOrder({ par: 5 }, 5.5)).toBe(0);
   });
+
+  it('supports case-pack ordering and reorder trigger', () => {
+    // Example: count by box, order by case (8 boxes per case), par=1 case
+    expect(parBasedToOrder({ par: 1, order_pack_qty: 8, reorder_trigger: 4 }, 3.9)).toBe(1);
+    expect(parBasedToOrder({ par: 1, order_pack_qty: 8, reorder_trigger: 4 }, 4)).toBe(1);
+    expect(parBasedToOrder({ par: 1, order_pack_qty: 8, reorder_trigger: 4 }, 4.1)).toBe(0);
+  });
 });
 
 describe('fmtManualAdj', () => {
@@ -53,6 +60,22 @@ describe('computeOrderLines', () => {
   it('drops zero lines', () => {
     const lines = computeOrderLines(items, { a: 4, b: 2 }, {}, ['a', 'b']);
     expect(lines.length).toBe(0);
+  });
+
+  it('returns order metadata for pack/unit-aware ordering', () => {
+    const lines = computeOrderLines(
+      [{ id: 'g', par: 8, name: 'Gloves', unit: 'box', order_pack_qty: 8, order_unit: 'case', reorder_trigger: 4 }],
+      { g: 3 },
+      {},
+      ['g']
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0].toOrder).toBe(1);
+    expect(lines[0].orderUnit).toBe('case');
+    expect(lines[0].orderPackQty).toBe(8);
+    expect(lines[0].onHandCountUnit).toBe(3);
+    expect(lines[0].parCountUnit).toBe(8);
+    expect(lines[0].reorderTriggerCountUnit).toBe(4);
   });
 });
 

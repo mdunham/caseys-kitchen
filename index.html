@@ -137,6 +137,7 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .setup-code-btn{display:inline-flex;align-items:center;justify-content:center;min-width:42px;padding:3px 6px;border-radius:7px;border:1px solid var(--ck-line);font-size:10px;font-weight:600;font-family:inherit;cursor:pointer}
 .setup-code-btn.save{background:var(--ck-red);border-color:var(--ck-red);color:#fff}
 .setup-code-btn.cancel{background:#fff;color:#6b7280}
+.setup-ord-badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:10px;font-weight:600;margin-left:6px}
 .mono{font-family:'SF Mono',monospace;font-size:10px}
 .qinput{width:58px;padding:5px 5px;background:#f9fafb;border:1px solid var(--ck-line);border-radius:7px;color:#111;font-size:14px;font-family:'SF Mono',monospace;font-weight:600;text-align:center;outline:none;transition:border-color .15s}
 .qinput:focus{border-color:var(--ck-red);background:#fff}
@@ -371,16 +372,16 @@ const STORE_PIN = '1406';
 const SS_PIN_KEY = 'ck2_store1406';
 
 const SEED_ITEMS = [
-  {id:'s1',name:'Hot Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1001',sort_order:1},
-  {id:'s2',name:'Mild Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1002',sort_order:2},
-  {id:'s3',name:'Pepperoni',cat_l1:'Freezer',cat_l2:'Meats',par:4,unit:'cs',code:'CSY1003',sort_order:3},
-  {id:'s4',name:'Large Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1010',sort_order:4},
-  {id:'s5',name:'Small Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1011',sort_order:5},
-  {id:'s6',name:'Large Original',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:3,unit:'cs',code:'CSY1012',sort_order:6},
-  {id:'s7',name:'Provolone',cat_l1:'Cooler',cat_l2:'Cheese',par:5,unit:'bags',code:'CSY2001',sort_order:7},
-  {id:'s8',name:'Mozzarella',cat_l1:'Cooler',cat_l2:'Cheese',par:4,unit:'bags',code:'CSY2002',sort_order:8},
-  {id:'s9',name:'Pizza Sauce',cat_l1:'Dry',cat_l2:'Sauces',par:6,unit:'cans',code:'CSY3001',sort_order:9},
-  {id:'s10',name:'Ranch Cups',cat_l1:'Dry',cat_l2:'Condiments',par:8,unit:'cs',code:'CSY3010',sort_order:10},
+  {id:'s1',name:'Hot Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1001',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:1},
+  {id:'s2',name:'Mild Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1002',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:2},
+  {id:'s3',name:'Pepperoni',cat_l1:'Freezer',cat_l2:'Meats',par:4,unit:'cs',code:'CSY1003',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:3},
+  {id:'s4',name:'Large Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1010',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:4},
+  {id:'s5',name:'Small Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1011',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:5},
+  {id:'s6',name:'Large Original',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:3,unit:'cs',code:'CSY1012',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:6},
+  {id:'s7',name:'Provolone',cat_l1:'Cooler',cat_l2:'Cheese',par:5,unit:'bags',code:'CSY2001',order_unit:'bags',order_pack_qty:1,reorder_trigger:null,sort_order:7},
+  {id:'s8',name:'Mozzarella',cat_l1:'Cooler',cat_l2:'Cheese',par:4,unit:'bags',code:'CSY2002',order_unit:'bags',order_pack_qty:1,reorder_trigger:null,sort_order:8},
+  {id:'s9',name:'Pizza Sauce',cat_l1:'Dry',cat_l2:'Sauces',par:6,unit:'cans',code:'CSY3001',order_unit:'cans',order_pack_qty:1,reorder_trigger:null,sort_order:9},
+  {id:'s10',name:'Ranch Cups',cat_l1:'Dry',cat_l2:'Condiments',par:8,unit:'cs',code:'CSY3010',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:10},
 ];
 
 // ─── SUPABASE ───────────────────────────────────────────────────────────────
@@ -1199,6 +1200,35 @@ function parBasedToOrder(item, onHand){
   return window.__CK_LOGIC.parBasedToOrder(item, onHand);
 }
 
+function itemOrderUnitLabel(item){
+  const v=String((item&&item.orderUnit!=null?item.orderUnit:item&&item.order_unit)||item?.unit||'').trim();
+  return v||String(item?.unit||'').trim()||'unit';
+}
+
+function itemOrderPackQty(item){
+  const n=parseFloat(item&&item.orderPackQty!=null?item.orderPackQty:item&&item.order_pack_qty);
+  return Number.isFinite(n)&&n>0?n:1;
+}
+
+function fmtQty(v){
+  const n=parseFloat(v);
+  if(!Number.isFinite(n)) return '0';
+  if(Number.isInteger(n)) return String(n);
+  return String(Math.round(n*100)/100);
+}
+
+function fmtTriggerLabel(item){
+  const n=parseFloat(item&&item.reorderTriggerCountUnit!=null?item.reorderTriggerCountUnit:item&&item.reorder_trigger);
+  if(!Number.isFinite(n)) return 'none';
+  return fmtQty(n);
+}
+
+function triggerMetaLabel(item){
+  const lbl=fmtTriggerLabel(item);
+  if(lbl==='none') return 'Trigger: none';
+  return `Trigger ≤ ${lbl} ${item&&item.unit?item.unit:''}`.trim();
+}
+
 function computeOrder(){
   if(!S.sessions.length) return [];
   const last=S.sessions[0];
@@ -1594,6 +1624,7 @@ function renderCount(){
           const basePrev=onH===null?null:parBasedToOrder(item,onH);
           const adjN=roundOrderAdj(parseFloat(getOrderManualAdj()[item.id])||0);
           const comb=basePrev===null?'':Math.max(0,roundOrderAdj(basePrev+adjN));
+          const ordUnit=itemOrderUnitLabel(item);
           return `<div class="manual-order-wrap">
           <div class="manual-order-lbl">Manual add to recommended order</div>
           <div class="manual-order-row">
@@ -1601,7 +1632,7 @@ function renderCount(){
             <span class="manual-order-val">${fmtManualAdj(adjN)}</span>
             <button type="button" class="btn-manual" aria-label="Increase manual extra" onclick="bumpOrderManualAdj('${item.id}',1)">+</button>
           </div>
-          <div class="manual-order-hint">${basePrev===null?'Enter a count above to preview par-based qty. ':'Par-based from this line: <b>'+basePrev+'</b> '+escapeHtml(item.unit)+' · '}${basePrev!==null?'<b>'+comb+'</b> would log after save (par-based + manual).':'Manual extra still applies when you save the count.'}</div>
+          <div class="manual-order-hint">${basePrev===null?'Enter a count above to preview par-based qty. ':'Par-based from this line: <b>'+basePrev+'</b> '+escapeHtml(ordUnit)+' · '}${basePrev!==null?'<b>'+comb+'</b> would log after save (par-based + manual).':'Manual extra still applies when you save the count.'}</div>
         </div>`;
         })():''}
       </div>`;
@@ -1650,12 +1681,13 @@ function renderCount(){
               const basePrev=onH===null?null:parBasedToOrder(item,onH);
               const adjN=roundOrderAdj(parseFloat(getOrderManualAdj()[item.id])||0);
               const comb=basePrev===null?'':String(Math.max(0,roundOrderAdj(basePrev+adjN)));
+              const ordUnit=itemOrderUnitLabel(item);
               return `<div class="manual-order-inline">
               <span class="manual-order-inline-lbl">Manual +order</span>
               <button type="button" class="btn-manual-sm" onclick="bumpOrderManualAdj('${item.id}',-1)">−</button>
               <span class="manual-order-val-sm">${fmtManualAdj(adjN)}</span>
               <button type="button" class="btn-manual-sm" onclick="bumpOrderManualAdj('${item.id}',1)">+</button>
-              ${basePrev!==null?`<span class="manual-order-inline-prev">log ${comb}</span>`:''}
+              ${basePrev!==null?`<span class="manual-order-inline-prev">log ${comb} ${escapeHtml(ordUnit)}</span>`:''}
             </div>`;
             })():''}`;
           });
@@ -1851,7 +1883,7 @@ function renderOrder(){
     removedFromOrder.forEach(it=>{
       h+=`<div class="card" style="margin-bottom:6px;opacity:.92">
         <div class="item-name" style="font-size:14px">${escapeHtml(it.name)}</div>
-        <div class="item-meta">${escapeHtml(it.cat_l1)} › ${escapeHtml(it.cat_l2)} · would order <b>${it.toOrder}</b> ${escapeHtml(it.unit)}</div>
+        <div class="item-meta">${escapeHtml(it.cat_l1)} › ${escapeHtml(it.cat_l2)} · would order <b>${it.toOrder}</b> ${escapeHtml(itemOrderUnitLabel(it))}</div>
         <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="restoreRecommendedLine('${it.id}')">Restore to order</button>
       </div>`;
     });
@@ -1911,7 +1943,7 @@ function renderOrder(){
     S.orderWalkIndex=Math.max(0,Math.min(S.orderWalkIndex,orderItems.length-1));
     const item=orderItems[S.orderWalkIndex];
     const ack=!!flags[item.id];
-    const opts=orderItems.map((it,i)=>`<option value="${i}"${i===S.orderWalkIndex?' selected':''}>${escapeHtml(it.name)} — ${it.toOrder} ${escapeHtml(it.unit)}</option>`).join('');
+    const opts=orderItems.map((it,i)=>`<option value="${i}"${i===S.orderWalkIndex?' selected':''}>${escapeHtml(it.name)} — ${it.toOrder} ${escapeHtml(itemOrderUnitLabel(it))}</option>`).join('');
     h+=`<div class="walk-bar" style="margin-bottom:8px">
       <select aria-label="Jump to item" style="width:100%;padding:7px 8px;border-radius:7px;border:1px solid var(--ck-line);font-size:12px;font-family:inherit;background:#fff;color:#111" onchange="orderWalkPick(parseInt(this.value,10))">${opts}</select>
       <div class="walk-pos" style="text-align:center;margin-top:4px;font-size:11px;color:#9ca3af">Item ${S.orderWalkIndex+1} of ${n}</div>
@@ -1919,12 +1951,12 @@ function renderOrder(){
     <div class="card walk-card ord-card${ack?' ord-acked':''}">
       <div class="walk-breadcrumb">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
       <div class="walk-name">${escapeHtml(item.name)}</div>
-      <div class="walk-meta">On hand <b>${item.onHand}</b> · Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b> ${escapeHtml(item.unit)}`:''} · <span class="mono">${escapeHtml(item.code)}</span></div>
+      <div class="walk-meta">On hand <b>${fmtQty(item.onHandCountUnit??item.onHand)}</b> ${escapeHtml(item.unit)} · Par <b style="color:var(--ck-red)">${fmtQty(item.parCountUnit??item.par)}</b> ${escapeHtml(item.unit)} · ${escapeHtml(triggerMetaLabel(item))}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b> ${escapeHtml(itemOrderUnitLabel(item))}`:''} · <span class="mono">${escapeHtml(item.code)}</span></div>
       <div class="order-list-bc-row order-walk-bcs-row">
         <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating QR…</span></div></div>
         <div class="order-list-bc-qty">
           <div class="order-rec-qty">${item.toOrder}</div>
-          <div class="order-rec-qty-lbl">${escapeHtml(item.unit)} to order</div>
+          <div class="order-rec-qty-lbl">${escapeHtml(itemOrderUnitLabel(item))} to order</div>
         </div>
         <button type="button" class="order-ack-btn order-ack-btn-list${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
       </div>
@@ -1948,14 +1980,14 @@ function renderOrder(){
         <div>
           <div class="item-name" style="font-size:14px">${escapeHtml(item.name)}</div>
           <div class="item-meta">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
-          <div class="item-meta">On hand: <span style="color:var(--ck-red-dark);font-weight:600">${item.onHand}</span> · Par: <span style="font-weight:600">${item.par}</span> ${escapeHtml(item.unit)}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b>`:''}</div>
+          <div class="item-meta">On hand: <span style="color:var(--ck-red-dark);font-weight:600">${fmtQty(item.onHandCountUnit??item.onHand)}</span> ${escapeHtml(item.unit)} · Par: <span style="font-weight:600">${fmtQty(item.parCountUnit??item.par)}</span> ${escapeHtml(item.unit)} · ${escapeHtml(triggerMetaLabel(item))}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b> ${escapeHtml(itemOrderUnitLabel(item))}`:''}</div>
         </div>
       </div>
       <div class="order-list-bc-row">
         <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating QR…</span></div></div>
         <div class="order-list-bc-qty">
           <div class="order-rec-qty">${item.toOrder}</div>
-          <div class="order-rec-qty-lbl">${escapeHtml(item.unit)} to order</div>
+          <div class="order-rec-qty-lbl">${escapeHtml(itemOrderUnitLabel(item))} to order</div>
         </div>
         <button type="button" class="order-ack-btn order-ack-btn-list${ack?' on':' order-ack-btn-pending'}" aria-pressed="${ack?'true':'false'}" aria-label="${ack?'Scanned — confirmed on order device':'Scanned — tap when entered on order device'}" onclick="toggleOrderAck('${item.id}')">${ack?'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Scanned</span><span class="order-ack-sub">${ack?'On order device':'Tap when entered'}</span></button>
       </div>
@@ -1971,7 +2003,7 @@ function renderOrder(){
       <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px">Not ordering this round (${removedFromOrder.length})</div>`;
     removedFromOrder.forEach(it=>{
       h+=`<div class="order-removed-row" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:12px">
-        <span>${escapeHtml(it.name)} <span style="color:#9ca3af">· ${it.toOrder} ${escapeHtml(it.unit)}</span></span>
+        <span>${escapeHtml(it.name)} <span style="color:#9ca3af">· ${it.toOrder} ${escapeHtml(itemOrderUnitLabel(it))}</span></span>
         <button type="button" class="btn btn-secondary btn-sm" onclick="restoreRecommendedLine('${it.id}')">Restore</button>
       </div>`;
     });
@@ -2074,11 +2106,11 @@ function renderReceive(){
     h+=`<div class="item-row">
       <div>
         <div class="item-name">${escapeHtml(item.name)}</div>
-        <div class="item-meta">Ordered: <span style="color:var(--ck-red);font-weight:600">${recDisp}</span> ${escapeHtml(item.unit)}</div>
+        <div class="item-meta">Ordered: <span style="color:var(--ck-red);font-weight:600">${recDisp}</span> ${escapeHtml(itemOrderUnitLabel(item))}</div>
       </div>
       <div style="display:flex;align-items:center">
         <input class="qinput" type="number" min="0" step="0.5" id="recv-${itemId}" placeholder="${recDisp}">
-        <span class="ulbl">${escapeHtml(item.unit)}</span>
+        <span class="ulbl">${escapeHtml(itemOrderUnitLabel(item))}</span>
       </div>
     </div>`;
   });
@@ -2097,11 +2129,11 @@ function renderReceive(){
       h+=`<div class="item-row" style="background:#fafafa">
         <div>
           <div class="item-name">${escapeHtml(item.name)} <span class="badge info" style="font-size:9px">Extra</span></div>
-          <div class="item-meta">Not on original order · ${escapeHtml(item.unit)}</div>
+          <div class="item-meta">Not on original order · ${escapeHtml(itemOrderUnitLabel(item))}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <input class="qinput" type="number" min="0" step="0.5" id="recv-${itemId}" placeholder="0">
-          <span class="ulbl">${escapeHtml(item.unit)}</span>
+          <span class="ulbl">${escapeHtml(itemOrderUnitLabel(item))}</span>
           <button type="button" class="btn btn-ghost btn-sm" style="padding:4px 8px" onclick="receiveRemoveExtraLine('${order.id}',JSON.parse(decodeURIComponent('${encAttr(itemId)}')))" title="Remove this line">Remove</button>
         </div>
       </div>`;
@@ -2274,8 +2306,11 @@ function renderSetup(){
       ${fg('Item Name','name',f.name||'','text','e.g. Hot Sausage')}
       ${fg('Category Level 1','cat_l1',f.cat_l1||'','text','e.g. Freezer',l1s)}
       ${fg('Category Level 2','cat_l2',f.cat_l2||'','text','e.g. Meats',l2s)}
-      ${fg('Par Level','par',f.par||'','number','e.g. 3')}
-      ${fg('Unit','unit',f.unit||'cs','text','e.g. cs, bags, lbs, cans')}
+      ${fg('Par Level (count unit)','par',f.par||'','number','e.g. 8 boxes')}
+      ${fg('Count Unit','unit',f.unit||'cs','text','e.g. boxes, bags, lbs, cans')}
+      ${fg('Order Unit','order_unit',f.order_unit||f.unit||'cs','text','e.g. cases, each')}
+      ${fg('Counted units per ordered unit','order_pack_qty',f.order_pack_qty||'1','number','e.g. 8 for 8 boxes per case')}
+      ${fg('Reorder trigger (count units)','reorder_trigger',f.reorder_trigger==null?'':f.reorder_trigger,'number','Order only when on hand is <= this value (leave blank for none)')}
       ${fg('Item code (QR)','code',f.code||'','text','e.g. CSY1001')}
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn btn-primary" onclick="saveItem()">
@@ -2343,6 +2378,9 @@ function renderSetup(){
       s.items.forEach(item=>{
         const editingCode=S.setupCodeEditId===item.id;
         const codeLabel=String(item.code||'').trim()||'No code';
+        const ordUnit=itemOrderUnitLabel(item);
+        const packQty=itemOrderPackQty(item);
+        const trigLabel=fmtTriggerLabel(item);
         const codeDisplay=editingCode
           ? `<span class="setup-code-edit">
               <input id="setup-code-input-${item.id}" class="setup-code-input" type="text" value="${escapeHtml(S.setupCodeDraft)}" aria-label="Order code for ${escapeHtml(item.name)}" oninput="setQuickEditItemCodeDraft(this.value)" onkeydown="quickEditItemCodeKeydown(event,'${item.id}')" onblur="quickEditItemCodeBlur(event,'${item.id}')">
@@ -2362,7 +2400,7 @@ function renderSetup(){
           </div>
           <div style="flex:1;min-width:0">
             <div class="item-name">${escapeHtml(item.name)}</div>
-            <div class="item-meta">Par: ${item.par} ${escapeHtml(item.unit)} · ${codeDisplay}</div>
+            <div class="item-meta">Par: ${fmtQty(item.par)} ${escapeHtml(item.unit)} · Order: ${escapeHtml(ordUnit)}${packQty!==1?`<span class="setup-ord-badge">x${fmtQty(packQty)}</span>`:''} · ${escapeHtml(triggerMetaLabel(item))} · ${codeDisplay}</div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
             <button class="btn btn-secondary btn-sm" onclick="startEdit('${item.id}')">
@@ -2764,12 +2802,14 @@ async function commitQuickEditItemCode(id){
   }
 }
 
-function startAdd(){ clearQuickEditItemCode(); S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',code:''}; render(); }
+function startAdd(){ clearQuickEditItemCode(); S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',order_unit:'cs',order_pack_qty:'1',reorder_trigger:'',code:''}; render(); }
 function startEdit(id){
   clearQuickEditItemCode();
   const item=S.items.find(i=>i.id===id); if(!item) return;
   S.formView='edit'; S.editItemId=id;
-  S.formData={name:item.name,cat_l1:item.cat_l1,cat_l2:item.cat_l2,par:String(item.par),unit:item.unit,code:item.code};
+  const triggerRaw=parseFloat(item.reorder_trigger);
+  const triggerDisplay=Number.isFinite(triggerRaw)?String(triggerRaw):'';
+  S.formData={name:item.name,cat_l1:item.cat_l1,cat_l2:item.cat_l2,par:String(item.par),unit:item.unit,order_unit:itemOrderUnitLabel(item),order_pack_qty:String(itemOrderPackQty(item)),reorder_trigger:triggerDisplay,code:item.code};
   render();
 }
 function cancelForm(){ clearQuickEditItemCode(); S.formView=null; S.editItemId=null; S.formData=null; render(); }
@@ -2780,10 +2820,16 @@ async function saveItem(){
   const f=S.formData||{};
   if(!f.name||!f.cat_l1||!f.par){ alert('Name, Category Level 1, and Par Level are required.'); return; }
   const existing=S.formView==='edit'?S.items.find(i=>i.id===S.editItemId):null;
+  const orderPackQtyRaw=parseFloat(f.order_pack_qty);
   const item={
     id: S.formView==='add'?Date.now().toString():S.editItemId,
     name:f.name, cat_l1:f.cat_l1, cat_l2:f.cat_l2||'',
-    par:parseFloat(f.par)||1, unit:f.unit||'cs', code:f.code||'',
+    par:parseFloat(f.par)||1,
+    unit:f.unit||'cs',
+    order_unit:String(f.order_unit||f.unit||'cs').trim()||String(f.unit||'cs').trim()||'cs',
+    order_pack_qty:Number.isFinite(orderPackQtyRaw)&&orderPackQtyRaw>0?orderPackQtyRaw:1,
+    reorder_trigger:String(f.reorder_trigger??'').trim()===''?null:(Number.isFinite(parseFloat(f.reorder_trigger))?parseFloat(f.reorder_trigger):null),
+    code:f.code||'',
     sort_order: existing!=null&&Number.isFinite(parseFloat(existing.sort_order))?parseFloat(existing.sort_order):S.items.length+1
   };
   try{
@@ -3008,6 +3054,26 @@ function showBanner(msg,type){
   setTimeout(()=>div.remove(),3000);
 }
 
+function normalizeItemOrderFields(item){
+  const next={...item};
+  const fallbackUnit=String(next.unit||'').trim()||'cs';
+  const orderUnitRaw=String(next.order_unit||'').trim();
+  next.order_unit=orderUnitRaw||fallbackUnit;
+  const packRaw=parseFloat(next.order_pack_qty);
+  next.order_pack_qty=Number.isFinite(packRaw)&&packRaw>0?packRaw:1;
+  const trigRaw=String(next.reorder_trigger??'').trim();
+  if(trigRaw==='') next.reorder_trigger=null;
+  else{
+    const trigN=parseFloat(trigRaw);
+    next.reorder_trigger=Number.isFinite(trigN)?trigN:null;
+  }
+  return next;
+}
+
+function normalizeItemsForOrderMath(items){
+  return (items||[]).map(normalizeItemOrderFields);
+}
+
 // ─── DATA LOAD ───────────────────────────────────────────────────────────────
 /** Once any inventory session exists, keep the count form unlocked (no start modal). */
 function syncCountFormAvailability(){
@@ -3030,9 +3096,9 @@ async function loadFromDB(){
     const {items,sessions,orders} = await db.loadAll();
     if(!items.length){
       await db.seedItems();
-      S.items = SEED_ITEMS;
+      S.items = normalizeItemsForOrderMath(SEED_ITEMS);
     } else {
-      S.items = items;
+      S.items = normalizeItemsForOrderMath(items);
     }
     S.sessions = sessions;
     S.orders = orders;
@@ -3052,7 +3118,7 @@ async function loadFromDB(){
 
 function loadFromCache(){
   const items = ls.get('items');
-  S.items = items||SEED_ITEMS;
+  S.items = normalizeItemsForOrderMath(items||SEED_ITEMS);
   S.sessions = ls.get('sessions')||[];
   S.orders = ls.get('orders')||[];
   syncCountFormAvailability();
