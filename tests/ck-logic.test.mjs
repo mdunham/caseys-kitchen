@@ -26,10 +26,10 @@ describe('parBasedToOrder', () => {
   });
 
   it('supports case-pack ordering and reorder trigger', () => {
-    // Example: count by box, order by case (8 boxes per case), par=1 case
-    expect(parBasedToOrder({ par: 1, order_pack_qty: 8, reorder_trigger: 4 }, 3.9)).toBe(1);
-    expect(parBasedToOrder({ par: 1, order_pack_qty: 8, reorder_trigger: 4 }, 4)).toBe(1);
-    expect(parBasedToOrder({ par: 1, order_pack_qty: 8, reorder_trigger: 4 }, 4.1)).toBe(0);
+    // Example: count by box, order by case (8 boxes per case), par=8 boxes (1 case)
+    expect(parBasedToOrder({ par: 8, order_pack_qty: 8, reorder_trigger: 4 }, 3.9)).toBe(1);
+    expect(parBasedToOrder({ par: 8, order_pack_qty: 8, reorder_trigger: 4 }, 4)).toBe(1);
+    expect(parBasedToOrder({ par: 8, order_pack_qty: 8, reorder_trigger: 4 }, 4.1)).toBe(0);
   });
 });
 
