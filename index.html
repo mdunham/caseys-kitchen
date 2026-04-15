@@ -129,7 +129,7 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .setup-l1-tools{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .item-name{font-size:12px;font-weight:600;margin-bottom:0;line-height:1.25}
 .item-meta{font-size:11px;color:#9ca3af}
-.setup-code-chip{display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;border:1px dashed #d1d5db;background:#f9fafb;color:#374151;cursor:default}
+.setup-code-chip{display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;border:1px dashed #d1d5db;background:#f9fafb;color:#374151;cursor:pointer}
 .setup-code-edit{display:inline-flex;align-items:center;gap:4px;max-width:100%}
 .setup-code-input{width:110px;max-width:100%;padding:3px 7px;border-radius:7px;border:1px solid var(--ck-line);font-size:12px;font-family:'SF Mono',monospace;outline:none}
 .setup-code-input:focus{border-color:var(--ck-red);background:#fff}
@@ -421,6 +421,8 @@ const S = {
   setupCodeEditId: null,
   setupCodeDraft: '',
   setupCodeSavingId: null,
+  setupCodeLastTapId: null,
+  setupCodeLastTapAt: 0,
 };
 
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
@@ -2349,7 +2351,8 @@ function renderSetup(){
                 <button type="button" class="setup-code-btn cancel" onclick="cancelQuickEditItemCode()" ${S.setupCodeSavingId===item.id?'disabled':''}>Cancel</button>
               </span>
             </span>`
-          : `<span class="setup-code-chip mono" role="button" tabindex="0" title="Double-click to edit order code"
+          : `<span class="setup-code-chip mono" role="button" tabindex="0" title="Double-click or double-tap to edit order code"
+               onclick="handleQuickEditItemCodeTap(event,'${item.id}')"
                ondblclick="startQuickEditItemCode('${item.id}')"
                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();startQuickEditItemCode('${item.id}')}">${escapeHtml(codeLabel)}</span>`;
         h+=`<div class="item-row">
@@ -2660,6 +2663,22 @@ function clearQuickEditItemCode(){
   S.setupCodeEditId=null;
   S.setupCodeDraft='';
   S.setupCodeSavingId=null;
+  S.setupCodeLastTapId=null;
+  S.setupCodeLastTapAt=0;
+}
+
+function handleQuickEditItemCodeTap(_ev,id){
+  if(S.setupCodeEditId||isAppBusy()) return;
+  const now=Date.now();
+  const isDoubleTap=S.setupCodeLastTapId===id && (now-S.setupCodeLastTapAt)<=420;
+  if(isDoubleTap){
+    S.setupCodeLastTapId=null;
+    S.setupCodeLastTapAt=0;
+    startQuickEditItemCode(id);
+    return;
+  }
+  S.setupCodeLastTapId=id;
+  S.setupCodeLastTapAt=now;
 }
 
 function focusSetupCodeInput(itemId){
