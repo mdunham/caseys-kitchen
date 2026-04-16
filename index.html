@@ -347,6 +347,7 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script>
 // ─── CONFIG ────────────────────────────────────────────────────────────────
 const SB_URL = 'https://lzhawmvgkylumwcseltb.supabase.co';
@@ -405,6 +406,8 @@ const S = {
   setupCodeSavingId: null,
   setupCodeLastTapId: null,
   setupCodeLastTapAt: 0,
+  /** Client-local order code rendering mode: qr | qr8 | barcode */
+  barcodeMode: 'qr',
 };
 
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
@@ -412,6 +415,30 @@ const ls = {
   get(k){ try{ const v=localStorage.getItem('ck2_'+k); return v?JSON.parse(v):null; }catch{ return null; }},
   set(k,v){ try{ localStorage.setItem('ck2_'+k,JSON.stringify(v)); }catch{} }
 };
+
+const BARCODE_MODE_OPTS={
+  qr:'Normal QR code',
+  qr8:'8-bit QR code',
+  barcode:'Normal barcode'
+};
+
+function normalizeBarcodeMode(v){
+  const key=String(v||'').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(BARCODE_MODE_OPTS,key)?key:'qr';
+}
+
+function loadBarcodeModeSetting(){
+  const saved=ls.get('barcodeMode');
+  S.barcodeMode=normalizeBarcodeMode(saved);
+}
+
+function setBarcodeMode(mode){
+  const next=normalizeBarcodeMode(mode);
+  if(next===S.barcodeMode) return;
+  S.barcodeMode=next;
+  ls.set('barcodeMode',next);
+  render();
+}
 
 // ─── DATABASE LAYER ─────────────────────────────────────────────────────────
 const db = {
@@ -1839,7 +1866,7 @@ function renderOrder(){
       <div class="walk-name">${escapeHtml(item.name)}</div>
       <div class="walk-meta">On hand <b>${fmtQty(item.onHandCountUnit??item.onHand)}</b> ${escapeHtml(item.unit)} · Par <b style="color:var(--ck-red)">${fmtQty(item.parCountUnit??item.par)}</b> ${escapeHtml(item.unit)} · ${escapeHtml(triggerMetaLabel(item))}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b> ${escapeHtml(itemOrderUnitLabel(item))}`:''} · <span class="mono">${escapeHtml(item.code)}</span></div>
       <div class="order-list-bc-row order-walk-bcs-row">
-        <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating QR…</span></div></div>
+        <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating code…</span></div></div>
         <div class="order-list-bc-qty">
           <div class="order-rec-qty">${item.toOrder}</div>
           <div class="order-rec-qty-lbl">${escapeHtml(itemOrderUnitLabel(item))} to order</div>
@@ -1870,7 +1897,7 @@ function renderOrder(){
         </div>
       </div>
       <div class="order-list-bc-row">
-        <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating QR…</span></div></div>
+        <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating code…</span></div></div>
         <div class="order-list-bc-qty">
           <div class="order-rec-qty">${item.toOrder}</div>
           <div class="order-rec-qty-lbl">${escapeHtml(itemOrderUnitLabel(item))} to order</div>
@@ -1915,12 +1942,41 @@ function renderOrder(){
 function drawBarcodes(){
   if(S.tab!=='order') return;
   const QCtor=typeof globalThis!=='undefined'?globalThis.QRCode:null;
+  const BCTor=typeof globalThis!=='undefined'?globalThis.JsBarcode:null;
+  const mode=normalizeBarcodeMode(S.barcodeMode);
   const orderItems=orderTabLineItems();
   for(const item of orderItems){
     const wrap=document.getElementById('bc-'+item.id);
     if(!wrap||!item.code) continue;
     const code=String(item.code).trim();
     wrap.innerHTML='';
+    if(mode==='barcode'){
+      if(!BCTor){
+        wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${escapeHtml(code)}</span>`;
+        continue;
+      }
+      try{
+        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+        wrap.appendChild(svg);
+        BCTor(svg, code, {
+          format:'CODE128',
+          width:1.6,
+          height:42,
+          margin:0,
+          displayValue:false,
+          lineColor:'#111111',
+          background:'#ffffff'
+        });
+        const cap=document.createElement('div');
+        cap.className='mono';
+        cap.style.cssText='font-size:10px;text-align:center;margin-top:4px;color:#6b7280;word-break:break-all;line-height:1.2';
+        cap.textContent=code;
+        wrap.appendChild(cap);
+      }catch(e){
+        wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${escapeHtml(code)}</span>`;
+      }
+      continue;
+    }
     if(!QCtor){
       wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${escapeHtml(code)}</span>`;
       continue;
@@ -1929,13 +1985,16 @@ function drawBarcodes(){
       const holder=document.createElement('div');
       holder.style.cssText='display:inline-block;line-height:0;max-width:100%';
       wrap.appendChild(holder);
+      const qrText=mode==='qr8'
+        ? String.fromCharCode(...Array.from(new TextEncoder().encode(code)))
+        : code;
       new QCtor(holder,{
-        text:code,
-        width:72,
-        height:72,
+        text:qrText,
+        width:mode==='qr8'?64:72,
+        height:mode==='qr8'?64:72,
         colorDark:'#111111',
         colorLight:'#ffffff',
-        correctLevel:QCtor.CorrectLevel.M
+        correctLevel:mode==='qr8'?QCtor.CorrectLevel.L:QCtor.CorrectLevel.M
       });
       const cap=document.createElement('div');
       cap.className='mono';
@@ -2218,6 +2277,15 @@ function renderSetup(){
   </div>`;
 
   h+=`<div class="form-card" style="margin-bottom:7px">
+    <div class="fg" style="margin-bottom:10px">
+      <label class="flabel">Barcode Type (this device only)</label>
+      <select class="finput" aria-label="Barcode type" onchange="setBarcodeMode(this.value)">
+        <option value="qr"${S.barcodeMode==='qr'?' selected':''}>Normal QR code</option>
+        <option value="qr8"${S.barcodeMode==='qr8'?' selected':''}>8-bit QR code</option>
+        <option value="barcode"${S.barcodeMode==='barcode'?' selected':''}>Normal barcode (Code 128)</option>
+      </select>
+      <div style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Applies only to this device/browser and only changes how item codes are shown in Order.</div>
+    </div>
     <button type="button" class="btn btn-secondary btn-sm" style="width:100%" onclick="toggleDeveloperInfo()" aria-expanded="${S.showDeveloperInfo?'true':'false'}">Developer Info</button>
     ${S.showDeveloperInfo?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:7px">Database Status</div>
@@ -3011,6 +3079,7 @@ async function finishBoot(){
 
 async function init(){
   await loadCkLogic();
+  loadBarcodeModeSetting();
 
   window.addEventListener('popstate',()=>{
     applyRouteFromHash();
