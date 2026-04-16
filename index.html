@@ -258,13 +258,8 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .sticky-footer-row.between{justify-content:space-between;align-items:center}
 .sticky-footer-copy{font-size:10px;color:#9ca3af;text-align:center;line-height:1.45;padding-top:2px}
 .sticky-footer-copy a{color:#9ca3af;text-decoration:underline}
-/* PIN gate & stale-sync modal */
-.pin-overlay,.modal-overlay{position:fixed;inset:0;background:rgba(255,255,255,.97);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:250;padding:16px;text-align:center}
-.modal-overlay{z-index:240;background:rgba(17,17,17,.45);backdrop-filter:blur(2px)}
-.modal-box{background:#fff;border-radius:12px;padding:16px 18px;max-width:340px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.12);border:1px solid var(--ck-line)}
-.modal-title{font-size:16px;font-weight:700;margin-bottom:6px;color:#111}
-.modal-text{font-size:12px;color:#6b7280;line-height:1.45;margin-bottom:12px}
-.modal-actions{display:flex;flex-direction:column;gap:6px}
+/* PIN gate */
+.pin-overlay{position:fixed;inset:0;background:rgba(255,255,255,.97);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:250;padding:16px;text-align:center}
 .pin-box{background:#fff;border:1px solid var(--ck-line);border-radius:12px;padding:18px 16px;max-width:320px;width:100%;box-shadow:0 8px 30px rgba(0,0,0,.06)}
 .pin-title{font-size:17px;font-weight:700;margin-bottom:5px}
 .pin-sub{font-size:12px;color:#6b7280;margin-bottom:12px}
@@ -302,16 +297,6 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
       <div id="pin-err" class="pin-err" role="alert"></div>
       <div class="pin-actions">
         <button type="button" class="btn btn-primary" style="width:100%" onclick="submitStorePin()">Unlock</button>
-      </div>
-    </div>
-  </div>
-  <div id="stale-sync-overlay" class="modal-overlay" aria-modal="true" role="dialog" aria-labelledby="stale-title" style="display:none">
-    <div class="modal-box">
-      <div class="modal-title" id="stale-title">Data may be outdated</div>
-      <div class="modal-text">The database was updated from another session or device. Refresh to load the latest items, counts, and orders, or stay on your current screen if you are still working.</div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-primary" style="width:100%" onclick="staleSyncRefresh()">Refresh data now</button>
-        <button type="button" class="btn btn-secondary" style="width:100%" onclick="staleSyncDismiss()">Cancel — keep working</button>
       </div>
     </div>
   </div>
@@ -408,10 +393,6 @@ const S = {
   /** Full list: when true, rows marked scanned are hidden from the list (default on) */
   orderListHideScanned: true,
   orderWalkIndex: 0,
-  lastRemoteFingerprint: null,
-  staleDialogOpen: false,
-  stalePollId: null,
-  staleCheckInFlight: false,
   /** When false and there are no saved sessions yet, the start-count modal is shown. After the first count exists, this stays true when on Count. */
   countFormActive: false,
   /** Count tab: show manual “extra for truck order” UI (toggled via header cog) */
@@ -652,99 +633,6 @@ function isStoreAuthed(){
   try{ return sessionStorage.getItem(SS_PIN_KEY)==='1'; }catch{ return false; }
 }
 
-/** Compact snapshot of remote DB for stale detection (another tab/device changed data). */
-async function fetchRemoteFingerprint(){
-  if(!sb) return null;
-  try{
-    const ic = await sb.from('ck_items').select('*',{count:'exact',head:true});
-    const iu = await sb.from('ck_items').select('updated_at').order('updated_at',{ascending:false}).limit(1).maybeSingle();
-    const sc = await sb.from('ck_sessions').select('*',{count:'exact',head:true});
-    const su = await sb.from('ck_sessions').select('counted_at').order('counted_at',{ascending:false}).limit(1).maybeSingle();
-    const cc = await sb.from('ck_counts').select('*',{count:'exact',head:true});
-    const cu = await sb.from('ck_counts').select('updated_at,created_at').order('updated_at',{ascending:false}).limit(1).maybeSingle();
-    const oc = await sb.from('ck_orders').select('*',{count:'exact',head:true});
-    const ou = await sb.from('ck_orders').select('ordered_at,received_at').order('ordered_at',{ascending:false}).limit(1).maybeSingle();
-    const orx = await sb.from('ck_orders').select('received_at').not('received_at','is',null).order('received_at',{ascending:false}).limit(1).maybeSingle();
-    const oic = await sb.from('ck_order_items').select('*',{count:'exact',head:true});
-    const lay = await sb.from('ck_layout').select('updated_at').eq('id','global').maybeSingle();
-    const packs = [ic,iu,sc,su,cc,cu,oc,ou,orx,oic];
-    const bad = packs.map(r=>r.error).filter(Boolean);
-    if(bad.length) throw bad[0];
-    const cRow = cu.data;
-    const cSig = (cRow&&(cRow.updated_at||cRow.created_at))||'';
-    const layu = lay.error ? '' : (lay.data?.updated_at||'');
-    return JSON.stringify({
-      ic:ic.count??0, iu:iu.data?.updated_at||'',
-      sc:sc.count??0, su:su.data?.counted_at||'',
-      cc:cc.count??0, cu:cSig,
-      oc:oc.count??0, oo:ou.data?.ordered_at||'', oa:ou.data?.received_at||'',
-      ormax:orx.data?.received_at||'',
-      oic:oic.count??0,
-      layu
-    });
-  }catch(e){
-    console.warn('fetchRemoteFingerprint',e);
-    return null;
-  }
-}
-
-async function noteServerSynced(){
-  if(!sb || !S.dbReady) return;
-  const fp = await fetchRemoteFingerprint();
-  if(fp!==null) S.lastRemoteFingerprint=fp;
-}
-
-function startStaleWatcher(){
-  if(S.stalePollId){ clearInterval(S.stalePollId); S.stalePollId=null; }
-  /* Stale UI is only evaluated after a saved count, saved order, or new item (see checkStaleIfOutOfSync). */
-}
-
-/** Compare server fingerprint to our last snapshot; open dialog if another session changed the DB. Only call after count save, order save, or adding an item. */
-async function checkStaleIfOutOfSync(){
-  if(!sb || !S.dbReady || S.staleDialogOpen || isAppBusy() || S.staleCheckInFlight) return;
-  S.staleCheckInFlight=true;
-  try{
-    const remote = await fetchRemoteFingerprint();
-    if(remote===null || S.lastRemoteFingerprint===null) return;
-    if(remote!==S.lastRemoteFingerprint) openStaleSyncDialog();
-  }finally{
-    S.staleCheckInFlight=false;
-  }
-}
-
-function openStaleSyncDialog(){
-  if(S.staleDialogOpen) return;
-  S.staleDialogOpen=true;
-  const el=document.getElementById('stale-sync-overlay');
-  if(el) el.style.display='flex';
-}
-
-function hideStaleSyncOverlay(){
-  const el=document.getElementById('stale-sync-overlay');
-  if(el) el.style.display='none';
-  S.staleDialogOpen=false;
-}
-
-async function staleSyncRefresh(){
-  hideStaleSyncOverlay();
-  const ov=document.getElementById('loading-overlay');
-  const lm=document.getElementById('loading-msg');
-  ov.style.display='flex';
-  lm.textContent='Refreshing data…';
-  try{
-    await loadFromDB();
-  }finally{
-    ov.style.display='none';
-  }
-  render();
-}
-
-async function staleSyncDismiss(){
-  hideStaleSyncOverlay();
-  const fp = await fetchRemoteFingerprint();
-  if(fp!==null) S.lastRemoteFingerprint=fp;
-}
-
 function focusStorePinInput(){
   const input=document.getElementById('pin-input');
   if(!input) return;
@@ -936,7 +824,6 @@ async function pushLayoutToDb(){
   try{
     const ms=await db.upsertLayout(L);
     if(ms!=null) layoutPushMsSet(ms);
-    await noteServerSynced();
   }catch(e){
     console.warn('layout sync',e);
   }
@@ -1397,7 +1284,6 @@ async function deletePendingOrderById(orderId, confirmMessage){
     S.orders=S.orders.filter(o=>o.id!==orderId);
     ls.set('orders',S.orders);
     setSyncOk();
-    await noteServerSynced();
     try{ ls.set('orderAck',null); }catch{}
     showBanner('Pending order removed.','ok');
     render();
@@ -2559,7 +2445,6 @@ async function saveEditSession(sessionId){
     sess.counts = merged;
     ls.set('sessions',S.sessions);
     setSyncOk();
-    await noteServerSynced();
     S.editSessionId=null; S.editDraft={};
     showBanner('Count updated!','ok');
     render();
@@ -2581,7 +2466,6 @@ async function deleteSession(sessionId){
     S.sessions = S.sessions.filter(s=>s.id!==sessionId);
     ls.set('sessions',S.sessions);
     setSyncOk();
-    await noteServerSynced();
     S.editSessionId=null; S.editDraft={};
     syncCountFormAvailability();
     render();
@@ -2604,8 +2488,6 @@ async function completeInventory(){
     S.sessions.unshift(sess);
     ls.set('sessions',S.sessions);
     setSyncOk();
-    await noteServerSynced();
-    void checkStaleIfOutOfSync();
     S.draft={};
     S.countView='list';
     S.countManualOrderOpen=false;
@@ -2652,8 +2534,6 @@ async function logOrder(){
     S.orders.unshift(order);
     ls.set('orders',S.orders);
     setSyncOk();
-    await noteServerSynced();
-    void checkStaleIfOutOfSync();
     try{ ls.set('orderAck',null); }catch{}
     clearOrderManualAdj();
     clearOrderRecExcludedForSession(sessionId);
@@ -2690,7 +2570,6 @@ async function confirmReceive(orderId){
     setSyncErr(e.message);
   }
   if(ok){
-    void noteServerSynced().catch(()=>{});
     showBanner('Truck order received! Take your next count to track usage.','ok');
   }
   render();
@@ -2790,7 +2669,6 @@ async function commitQuickEditItemCode(id){
     S.items[idx]=updated;
     ls.set('items',S.items);
     setSyncOk();
-    await noteServerSynced();
     clearQuickEditItemCode();
     showBanner('Order code updated.','ok');
     render();
@@ -2833,15 +2711,12 @@ async function saveItem(){
     sort_order: existing!=null&&Number.isFinite(parseFloat(existing.sort_order))?parseFloat(existing.sort_order):S.items.length+1
   };
   try{
-    const wasAdd=S.formView==='add';
     setSyncing(true,'Saving item…');
     await db.upsertItem(item);
     if(S.formView==='add') S.items.push(item);
     else { const idx=S.items.findIndex(i=>i.id===item.id); if(idx>=0) S.items[idx]=item; }
     ls.set('items',S.items);
     setSyncOk();
-    await noteServerSynced();
-    if(wasAdd) void checkStaleIfOutOfSync();
     S.formView=null; S.editItemId=null; S.formData=null;
     render();
   }catch(e){
@@ -2859,7 +2734,6 @@ async function deleteItem(id){
     S.items=S.items.filter(i=>i.id!==id);
     ls.set('items',S.items);
     setSyncOk();
-    await noteServerSynced();
     render();
   }catch(e){
     setSyncErr(e.message);
@@ -3082,13 +2956,12 @@ function syncCountFormAvailability(){
 }
 
 async function loadFromDB(){
-  if(!sb){ loadFromCache(); S.lastRemoteFingerprint=null; return; }
+  if(!sb){ loadFromCache(); return; }
   try{
     const ok = await db.checkTables();
     if(!ok){
       S.dbReady=false;
       loadFromCache();
-      S.lastRemoteFingerprint=null;
       setSyncErr('Tables not found — run setup.sql in Supabase');
       return;
     }
@@ -3107,12 +2980,10 @@ async function loadFromDB(){
     ls.set('orders',S.orders);
     await mergeLayoutFromRemote();
     setSyncOk();
-    await noteServerSynced();
     syncCountFormAvailability();
   }catch(e){
     setSyncErr(e.message);
     loadFromCache();
-    S.lastRemoteFingerprint=null;
   }
 }
 
@@ -3130,7 +3001,6 @@ async function finishBoot(){
   applyRouteFromHash();
   document.getElementById('loading-overlay').style.display='none';
   render();
-  startStaleWatcher();
   if(!window.__ckVisStaleBound){
     window.__ckVisStaleBound=true;
     document.addEventListener('visibilitychange',()=>{
