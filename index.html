@@ -353,6 +353,10 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       Setup
     </button>
+    <button class="tab" id="t-admin" onclick="setTab('admin')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l3 4 5 .8-3.5 3.4.8 4.8L12 13l-5.3 2.9.8-4.8L4 6.8 9 6z"/><circle cx="12" cy="12" r="2.2"/></svg>
+      Admin
+    </button>
   </nav>
 </div>
 
@@ -776,6 +780,227 @@ const db = {
     const {data,error} = await sb.from('ck_layout').upsert(row,{onConflict:'id'}).select('updated_at').maybeSingle();
     if(error) throw error;
     return data&&data.updated_at ? new Date(data.updated_at).getTime() : null;
+  },
+
+  async adminLoadSnapshot(){
+    if(!sb) throw new Error('No database connection');
+    const out={
+      accounts:[],
+      stores:[],
+      accountStores:[],
+      users:[],
+      subscriptions:[],
+      paymentEvents:[],
+      systemSettings:[],
+      prices:[],
+      refunds:[],
+      audit:[]
+    };
+    const tableReads=[
+      ['accounts','ck_accounts','*'],
+      ['stores','ck_stores','*'],
+      ['accountStores','ck_account_stores','*'],
+      ['users','ck_users','*'],
+      ['subscriptions','ck_subscriptions','*'],
+      ['paymentEvents','ck_payment_events','*'],
+      ['systemSettings','ck_system_settings','*'],
+      ['prices','ck_price_book','*'],
+      ['refunds','ck_refunds','*'],
+      ['audit','ck_audit_logs','*']
+    ];
+    for(const [key,table,sel] of tableReads){
+      try{
+        const {data,error}=await sb.from(table).select(sel).limit(key==='audit'?300:500);
+        if(error) continue;
+        out[key]=data||[];
+      }catch{}
+    }
+    out.paymentEvents=(out.paymentEvents||[]).slice().sort((a,b)=>new Date(b.occurred_at||0)-new Date(a.occurred_at||0));
+    out.refunds=(out.refunds||[]).slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+    out.audit=(out.audit||[]).slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+    return out;
+  },
+
+  async adminResolveAccountForStore(storeId){
+    const sid=String(storeId||'').trim();
+    if(!sid) return null;
+    try{
+      const {data,error}=await sb.from('ck_account_stores').select('account_id').eq('store_id',sid).limit(1).maybeSingle();
+      if(error) return null;
+      return data&&data.account_id ? data.account_id : null;
+    }catch{
+      return null;
+    }
+  },
+
+  async adminResolveStoreForAccount(accountId){
+    const aid=String(accountId||'').trim();
+    if(!aid) return null;
+    try{
+      const {data,error}=await sb.from('ck_account_stores').select('store_id').eq('account_id',aid).limit(1).maybeSingle();
+      if(error) return null;
+      return data&&data.store_id ? data.store_id : null;
+    }catch{
+      return null;
+    }
+  },
+
+  async loadStoreBillingContext(storeId){
+    if(!sb) return null;
+    const sid=String(storeId||'').trim();
+    if(!sid) return null;
+    let accountId=null;
+    try{
+      accountId=await db.adminResolveAccountForStore(sid);
+    }catch{}
+    let q=sb.from('ck_subscriptions').select('*').eq('store_id',sid).eq('plan_code','ordering_usage').order('updated_at',{ascending:false}).limit(1);
+    if(accountId) q=q.eq('account_id',accountId);
+    const {data,error}=await q.maybeSingle();
+    if(error) throw error;
+    return data||null;
+  },
+
+  async adminUpsertUser(row){
+    const accountId=String(row.account_id||'').trim() || await db.adminResolveAccountForStore(row.store_id);
+    if(!accountId) throw new Error('account_id is required (or provide a valid store_id linked to an account).');
+    const payload={
+      id:row.id||makeEntityId('usr'),
+      account_id:accountId,
+      email:row.email||null,
+      full_name:String(row.display_name||row.full_name||'').trim(),
+      role:String(row.role||'manager').trim()||'manager',
+      is_active:row.is_active!==false,
+      updated_at:new Date().toISOString()
+    };
+    const {error}=await sb.from('ck_users').upsert(payload,{onConflict:'id'});
+    if(error) throw error;
+    await db.adminLogEvent({
+      event_type:'admin.user.upsert',
+      actor_user_id:null,
+      store_id:row.store_id||null,
+      account_id:payload.account_id,
+      details:{id:payload.id,email:payload.email,role:payload.role,is_active:payload.is_active}
+    });
+    return payload;
+  },
+
+  async adminDeleteUser(userId){
+    const {error}=await sb.from('ck_users').delete().eq('id',userId);
+    if(error) throw error;
+    await db.adminLogEvent({
+      event_type:'admin.user.delete',
+      actor_user_id:null,
+      store_id:null,
+      account_id:null,
+      details:{id:userId}
+    });
+  },
+
+  async adminUpsertSubscription(row){
+    const payload={...row,updated_at:new Date().toISOString()};
+    const conflict='account_id,store_id,plan_code';
+    const {error}=await sb.from('ck_subscriptions').upsert(payload,{onConflict:conflict});
+    if(error) throw error;
+    await db.adminLogEvent({
+      event_type:'admin.subscription.upsert',
+      actor_user_id:null,
+      store_id:payload.store_id||null,
+      account_id:payload.account_id||null,
+      details:{
+        plan_code:payload.plan_code,
+        status:payload.status,
+        trial_ends_at:payload.trial_ends_at,
+        current_period_end:payload.current_period_end
+      }
+    });
+    return payload;
+  },
+
+  async adminDeleteSubscription(row){
+    let q=sb.from('ck_subscriptions').delete().eq('account_id',row.account_id).eq('store_id',row.store_id).eq('plan_code',row.plan_code);
+    const {error}=await q;
+    if(error) throw error;
+    await db.adminLogEvent({
+      event_type:'admin.subscription.delete',
+      actor_user_id:null,
+      store_id:row.store_id||null,
+      account_id:row.account_id||null,
+      details:{plan_code:row.plan_code}
+    });
+  },
+
+  async adminIssueRefund(row){
+    let storeId=String(row.store_id||'').trim();
+    let accountId=String(row.account_id||'').trim();
+    if(!accountId&&storeId) accountId=await db.adminResolveAccountForStore(storeId);
+    if(!storeId&&accountId) storeId=await db.adminResolveStoreForAccount(accountId);
+    if(!storeId) throw new Error('store_id is required to issue a refund (or provide account_id linked to a store).');
+    if(!accountId) throw new Error('account_id is required to issue a refund (or provide store_id linked to an account).');
+    const amountCents=Math.max(0,parseInt(row.amount_cents,10)||0);
+    if(amountCents<=0) throw new Error('Refund amount must be greater than 0.');
+    const nowIso=new Date().toISOString();
+    const paymentEvent={
+      id:makeEntityId('payevt'),
+      account_id:accountId,
+      store_id:storeId,
+      subscription_id:row.subscription_id||null,
+      provider:String(row.provider||'stripe').trim()||'stripe',
+      provider_payment_id:String(row.provider_payment_id||row.stripe_payment_id||'').trim()||makeEntityId('stripepi'),
+      amount_cents:amountCents,
+      refunded_cents:amountCents,
+      currency:String(row.currency||'usd').toLowerCase(),
+      status:'refunded',
+      occurred_at:nowIso,
+      metadata:row.metadata||{},
+      created_at:nowIso
+    };
+    const {error:payErr}=await sb.from('ck_payment_events').insert(paymentEvent);
+    if(payErr) throw payErr;
+    const refund={
+      id:makeEntityId('refund'),
+      payment_event_id:paymentEvent.id,
+      account_id:accountId,
+      store_id:storeId,
+      amount_cents:amountCents,
+      reason:String(row.reason||'').trim()||'admin_refund',
+      status:String(row.status||'succeeded').trim()||'succeeded',
+      created_by:String(row.created_by||'admin_console').trim()||'admin_console',
+      created_at:nowIso
+    };
+    const {error:refundErr}=await sb.from('ck_refunds').insert(refund);
+    if(refundErr) throw refundErr;
+    await db.adminLogEvent({
+      event_type:'admin.refund.create',
+      actor_user_id:null,
+      store_id:refund.store_id,
+      account_id:refund.account_id,
+      details:{
+        refund_id:refund.id,
+        payment_event_id:paymentEvent.id,
+        amount_cents:refund.amount_cents,
+        reason:refund.reason,
+        status:refund.status
+      }
+    });
+    return refund;
+  },
+
+  async adminLogEvent(evt){
+    const row={
+      id:makeEntityId('audit'),
+      event_type:String(evt.event_type||'app.event').trim()||'app.event',
+      actor:String(evt.actor_user_id||evt.actor||'system').trim()||'system',
+      store_id:evt.store_id||null,
+      target_type:evt.target_type||null,
+      target_id:evt.target_id||null,
+      details:evt.details||{},
+      created_at:new Date().toISOString()
+    };
+    try{
+      const {error}=await sb.from('ck_audit_logs').insert(row);
+      if(error) throw error;
+    }catch{}
+    return row;
   }
 };
 
@@ -1071,6 +1296,11 @@ function fmtMoneyCents(cents){
   return '$'+(n/100).toFixed(2);
 }
 
+function fmtAuditDate(iso){
+  if(!iso) return '—';
+  try{ return fmtDateTime(iso); }catch{ return String(iso); }
+}
+
 function escapeHtml(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -1078,6 +1308,23 @@ function escapeHtml(s){
 function stickyFooterCopyright(){
   const y=new Date().getFullYear();
   return `<div class="sticky-footer-copy">© ${y} Matthew Dunham · <a href="mailto:send_me_letters@hotmail.com">send_me_letters@hotmail.com</a></div>`;
+}
+
+function safeJson(v){
+  try{ return JSON.stringify(v||{},null,2); }catch{ return '{}'; }
+}
+
+function planPriceLabel(sub, priceBook){
+  const plan=String(sub&&sub.plan_code||'').trim();
+  const directCents=Number(sub&&sub.price_cents);
+  const directCurrency=String(sub&&sub.currency||'usd').toUpperCase();
+  if(Number.isFinite(directCents)&&directCents>0) return `${directCurrency} ${(directCents/100).toFixed(2)}`;
+  const match=(priceBook||[]).find(p=>String(p.plan_code||'').trim()===plan && p.active!==false);
+  if(!match) return '—';
+  const cents=Number(match.price_cents);
+  if(!Number.isFinite(cents)||cents<=0) return '—';
+  const cur=String(match.currency||'usd').toUpperCase();
+  return `${cur} ${(cents/100).toFixed(2)}`;
 }
 
 /** Safe for double-quoted onclick="fn(...)" — avoids nested " breaking the attribute */
@@ -1688,10 +1935,11 @@ function render(){
   updateScheduleChip();
   const inst=renderInstallOffer();
   if(S.tab==='count')   m.innerHTML=inst+(S.historyMode ? renderHistory() : renderCount());
-  if(S.tab==='order')   m.innerHTML=inst+renderOrder();
-  if(S.tab==='receive') m.innerHTML=inst+renderReceive();
-  if(S.tab==='usage')   m.innerHTML=inst+renderUsage();
+  if(S.tab==='order')   m.innerHTML=inst+(canAccessFeature('order')?renderOrder():renderFeatureGateBanner('order'));
+  if(S.tab==='receive') m.innerHTML=inst+(canAccessFeature('receive')?renderReceive():renderFeatureGateBanner('receive'));
+  if(S.tab==='usage')   m.innerHTML=inst+(canAccessFeature('usage')?renderUsage():renderFeatureGateBanner('usage'));
   if(S.tab==='setup')   m.innerHTML=inst+renderSetup();
+  if(S.tab==='admin')   m.innerHTML=inst+renderAdmin();
   if(S.tab==='order') scheduleDrawBarcodes();
   syncUrlFromState();
 }
@@ -2068,6 +2316,14 @@ function renderEditSession(sessionId){
 
 // ── ORDER TAB ────────────────────────────────────────────────────────────────
 function renderOrder(){
+  const gate=renderFeatureGateBanner('order');
+  if(gate){
+    return `
+    <div class="pg-hdr">
+      <div><div class="pg-title">Recommended Order</div><div class="pg-sub">Subscription required</div></div>
+    </div>
+    ${gate}`;
+  }
   const deadline = getOrderDeadline();
   const ms = deadline - new Date();
   const hrs = ms/3600000;
@@ -2343,6 +2599,14 @@ function drawBarcodes(){
 
 // ── RECEIVE TAB ──────────────────────────────────────────────────────────────
 function renderReceive(){
+  const gate=renderFeatureGateBanner('receive');
+  if(gate){
+    return `
+    <div class="pg-hdr">
+      <div><div class="pg-title">Receive Truck Order</div><div class="pg-sub">Subscription required</div></div>
+    </div>
+    ${gate}`;
+  }
   const arrival = getTruckArrival();
   let h=`
   <div class="pg-hdr">
@@ -2468,6 +2732,14 @@ function receiveRemoveExtraLine(orderId,itemId){
 
 // ── USAGE TAB ────────────────────────────────────────────────────────────────
 function renderUsage(){
+  const gate=renderFeatureGateBanner('usage');
+  if(gate){
+    return `
+    <div class="pg-hdr">
+      <div><div class="pg-title">Usage</div><div class="pg-sub">Subscription required</div></div>
+    </div>
+    ${gate}`;
+  }
   const usage = computeUsage();
   const withData = Object.values(usage).filter(u=>u.avg!==null).sort((a,b)=>(b.avgWeekly||0)-(a.avgWeekly||0));
   const recvd = S.orders.filter(o=>o.status==='received');
@@ -2719,6 +2991,382 @@ function renderTestResults(){
   return h;
 }
 
+function renderAdmin(){
+  if(!S.adminAuthed){
+    return `
+    <div class="pg-hdr">
+      <div><div class="pg-title">Admin</div><div class="pg-sub">Restricted controls</div></div>
+    </div>
+    <div class="card" style="padding:14px">
+      <div class="banner banner-warn" style="margin-bottom:10px">Admin access is locked.</div>
+      <button class="btn btn-primary" onclick="promptAdminUnlock()">Unlock Admin</button>
+    </div>`;
+  }
+  const snap=S.adminSnapshot||{};
+  const users=snap.users||[];
+  const subs=snap.subscriptions||[];
+  const refunds=snap.refunds||[];
+  const audit=snap.audit||[];
+  let h=`
+  <div class="pg-hdr">
+    <div><div class="pg-title">Admin Console</div><div class="pg-sub">Accounts, subscriptions, refunds, and audit</div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-secondary btn-sm" onclick="adminLoad()">Refresh</button>
+      <button class="btn btn-danger btn-sm" onclick="logoutAdmin()">Lock</button>
+    </div>
+  </div>`;
+  if(S.adminError){
+    h+=`<div class="banner banner-err" style="margin-bottom:8px">${escapeHtml(S.adminError)}</div>`;
+  }
+  h+=`<div class="metrics" style="grid-template-columns:repeat(4,1fr)">
+    <div class="metric"><div class="metric-v">${users.length}</div><div class="metric-l">users</div></div>
+    <div class="metric"><div class="metric-v">${subs.length}</div><div class="metric-l">subscriptions</div></div>
+    <div class="metric"><div class="metric-v">${refunds.length}</div><div class="metric-l">refunds</div></div>
+    <div class="metric"><div class="metric-v">${audit.length}</div><div class="metric-l">events</div></div>
+  </div>`;
+  h+=`<div class="card" style="padding:10px;margin-bottom:8px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:6px">Users</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <input id="admin-user-email" class="finput" style="flex:1;min-width:170px" placeholder="user@company.com">
+      <input id="admin-user-name" class="finput" style="flex:1;min-width:150px" placeholder="Display name">
+      <input id="admin-user-role" class="finput" style="width:120px" placeholder="role">
+      <input id="admin-user-store" class="finput" style="width:140px" placeholder="store_id">
+      <input id="admin-user-account" class="finput" style="width:150px" placeholder="account_id">
+      <button class="btn btn-primary btn-sm" onclick="adminSaveUser()">Add / Update User</button>
+    </div>`;
+  users.slice(0,30).forEach(u=>{
+    h+=`<div class="test-row">
+      <span>${escapeHtml(u.email||u.id||'user')} · ${escapeHtml(u.role||'member')}</span>
+      <button class="btn btn-danger btn-sm" onclick="adminDeleteUser(JSON.parse(decodeURIComponent('${encAttr(u.id||'')}')))">Delete</button>
+    </div>`;
+  });
+  h+='</div>';
+  h+=`<div class="card" style="padding:10px;margin-bottom:8px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:6px">Subscriptions</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <input id="admin-sub-account" class="finput" style="width:150px" placeholder="account_id">
+      <input id="admin-sub-store" class="finput" style="width:140px" placeholder="store_id">
+      <input id="admin-sub-plan" class="finput" style="width:140px" placeholder="plan_code">
+      <input id="admin-sub-status" class="finput" style="width:120px" placeholder="status">
+      <button class="btn btn-primary btn-sm" onclick="adminSaveSub()">Save Subscription</button>
+      <button class="btn btn-secondary btn-sm" onclick="adminSetFreePlan()">Set Free Plan</button>
+    </div>`;
+  subs.slice(0,40).forEach(s=>{
+    h+=`<div class="test-row">
+      <span>${escapeHtml(s.account_id||'')} · ${escapeHtml(s.store_id||'')} · ${escapeHtml(s.plan_code||'')} · ${escapeHtml(s.status||'')}</span>
+      <button class="btn btn-danger btn-sm" onclick="adminDeleteSub(JSON.parse(decodeURIComponent('${encAttr(s.account_id||'')}')),JSON.parse(decodeURIComponent('${encAttr(s.store_id||'')}')),JSON.parse(decodeURIComponent('${encAttr(s.plan_code||'')}')))">Delete</button>
+    </div>`;
+  });
+  h+='</div>';
+  h+=`<div class="card" style="padding:10px;margin-bottom:8px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:6px">Refunds</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <input id="admin-refund-account" class="finput" style="width:150px" placeholder="account_id">
+      <input id="admin-refund-store" class="finput" style="width:140px" placeholder="store_id">
+      <input id="admin-refund-amount" class="finput" style="width:120px" placeholder="amount_cents">
+      <input id="admin-refund-reason" class="finput" style="flex:1;min-width:180px" placeholder="reason">
+      <button class="btn btn-primary btn-sm" onclick="adminIssueRefund()">Issue Refund</button>
+    </div>`;
+  refunds.slice(0,25).forEach(r=>{
+    h+=`<div class="test-row"><span>${escapeHtml(r.id||'')} · ${fmtMoneyCents(r.amount_cents||0)} · ${escapeHtml(r.status||'')}</span></div>`;
+  });
+  h+='</div>';
+  h+=`<div class="card" style="padding:10px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:6px">Audit Events</div>`;
+  audit.slice(0,60).forEach(ev=>{
+    h+=`<div class="test-row"><span>${escapeHtml(ev.event_type||'event')}</span><span style="font-size:10px;color:#9ca3af">${escapeHtml(fmtDateTime(ev.created_at||new Date().toISOString()))}</span></div>`;
+  });
+  h+='</div>';
+  return h;
+}
+
+function canAccessFeature(feature){
+  const access=S.featureAccess||{};
+  if(feature==='count') return access.count!==false;
+  if(feature==='order') return access.ordering!==false;
+  if(feature==='receive') return access.receive!==false;
+  if(feature==='usage') return access.usage!==false;
+  return true;
+}
+
+function renderFeatureGateBanner(feature){
+  if(canAccessFeature(feature)) return '';
+  const source=String((S.featureAccess&&S.featureAccess.source)||'subscription');
+  if(source==='trial_expired'){
+    return `<div class="banner banner-warn" style="margin-bottom:8px;line-height:1.45">Your 45-day trial for Ordering and Usage has ended. Contact your admin to activate a paid plan or set this store to free.</div>`;
+  }
+  return `<div class="banner banner-warn" style="margin-bottom:8px;line-height:1.45">This feature is disabled by current subscription settings.</div>`;
+}
+
+function updateFeatureAccessFromSnapshot(snapshot){
+  const base={count:true,ordering:true,receive:true,usage:true,source:'legacy'};
+  S.billingCtx=snapshot||null;
+  if(!snapshot||!Array.isArray(snapshot.subscriptions)){
+    S.featureAccess=base;
+    return;
+  }
+  const subs=snapshot.subscriptions.filter(s=>String(s.store_id||'').trim()===ACTIVE_STORE.id);
+  if(!subs.length){
+    S.featureAccess=base;
+    return;
+  }
+  const now=Date.now();
+  let allowOrdering=false;
+  let source='subscription';
+  for(const sub of subs){
+    const status=String(sub.status||'').toLowerCase();
+    const isFree=!!sub.is_free || status==='free';
+    if(isFree){
+      allowOrdering=true;
+      source='free';
+      break;
+    }
+    if(status==='active'){
+      allowOrdering=true;
+      source='active';
+      break;
+    }
+    if(status==='trialing'){
+      const endTs=Date.parse(sub.trial_ends_at||'');
+      if(!Number.isNaN(endTs)&&endTs>=now){
+        allowOrdering=true;
+        source='trialing';
+        break;
+      }
+      source='trial_expired';
+    }
+  }
+  S.featureAccess={
+    count:true,
+    ordering:allowOrdering,
+    receive:allowOrdering,
+    usage:allowOrdering,
+    source
+  };
+}
+
+async function logAdminAction(eventType, details, opts={}){
+  try{
+    await db.adminLogEvent({
+      event_type:eventType,
+      actor_user_id:opts.actor_user_id||null,
+      store_id:opts.store_id===undefined?ACTIVE_STORE.id:opts.store_id,
+      account_id:opts.account_id||null,
+      details:details||{},
+      source:'admin_console',
+      user_agent:navigator.userAgent||null
+    });
+  }catch{}
+}
+
+async function adminLoad(){
+  if(!S.adminAuthed) return;
+  S.adminError=null;
+  try{
+    setSyncing(true,'Loading admin data…');
+    S.adminSnapshot=await db.adminLoadSnapshot();
+    updateFeatureAccessFromSnapshot(S.adminSnapshot);
+    setSyncOk();
+  }catch(e){
+    setSyncErr(e.message);
+    S.adminError=e.message||'Failed to load admin snapshot.';
+  }
+  render();
+}
+
+function promptAdminUnlock(){
+  const pin=prompt('Enter admin PIN');
+  if(pin==null) return;
+  if(String(pin).trim()!==ADMIN_PIN){
+    alert('Incorrect admin PIN.');
+    return;
+  }
+  S.adminAuthed=true;
+  S.adminError=null;
+  try{ sessionStorage.setItem(SS_ADMIN_KEY,'1'); }catch{}
+  void adminLoad();
+}
+
+function logoutAdmin(){
+  S.adminAuthed=false;
+  S.adminSnapshot=null;
+  S.adminError=null;
+  try{ sessionStorage.removeItem(SS_ADMIN_KEY); }catch{}
+  if(S.tab==='admin') setTab('setup');
+  else render();
+}
+
+async function adminSaveUser(){
+  if(!S.adminAuthed) return;
+  const emailEl=document.getElementById('admin-user-email');
+  const nameEl=document.getElementById('admin-user-name');
+  const roleEl=document.getElementById('admin-user-role');
+  const storeEl=document.getElementById('admin-user-store');
+  const accountEl=document.getElementById('admin-user-account');
+  const email=String(emailEl&&emailEl.value||'').trim().toLowerCase();
+  if(!email){ alert('Email is required.'); return; }
+  const row={
+    email,
+    display_name:String(nameEl&&nameEl.value||'').trim()||null,
+    role:String(roleEl&&roleEl.value||'').trim()||'member',
+    store_id:String(storeEl&&storeEl.value||'').trim()||null,
+    account_id:String(accountEl&&accountEl.value||'').trim()||null,
+    status:'active'
+  };
+  try{
+    setSyncing(true,'Saving user…');
+    const saved=await db.adminUpsertUser(row);
+    await logAdminAction('admin.user.manage',{id:saved.id,email:saved.email,role:saved.role},{store_id:saved.store_id||null,account_id:saved.account_id||null});
+    setSyncOk();
+    if(emailEl) emailEl.value='';
+    if(nameEl) nameEl.value='';
+    if(roleEl) roleEl.value='';
+    if(storeEl) storeEl.value='';
+    if(accountEl) accountEl.value='';
+    await adminLoad();
+  }catch(e){
+    setSyncErr(e.message);
+    S.adminError=e.message||'Unable to save user.';
+    render();
+  }
+}
+
+async function adminDeleteUser(userId){
+  if(!S.adminAuthed||!userId) return;
+  if(!confirm('Delete this user?')) return;
+  try{
+    setSyncing(true,'Deleting user…');
+    await db.adminDeleteUser(userId);
+    await logAdminAction('admin.user.delete',{id:userId});
+    setSyncOk();
+    await adminLoad();
+  }catch(e){
+    setSyncErr(e.message);
+    S.adminError=e.message||'Unable to delete user.';
+    render();
+  }
+}
+
+async function adminSaveSub(){
+  if(!S.adminAuthed) return;
+  const accountEl=document.getElementById('admin-sub-account');
+  const storeEl=document.getElementById('admin-sub-store');
+  const planEl=document.getElementById('admin-sub-plan');
+  const statusEl=document.getElementById('admin-sub-status');
+  const account_id=String(accountEl&&accountEl.value||'').trim();
+  const store_id=String(storeEl&&storeEl.value||'').trim();
+  const plan_code=String(planEl&&planEl.value||'').trim()||'ordering_usage';
+  if(!account_id||!store_id){ alert('account_id and store_id are required.'); return; }
+  const nowIso=new Date().toISOString();
+  const status=String(statusEl&&statusEl.value||'').trim()||'active';
+  const row={
+    account_id,
+    store_id,
+    plan_code,
+    status,
+    trial_started_at:nowIso,
+    trial_ends_at:new Date(Date.now()+DEFAULT_TRIAL_DAYS*24*60*60*1000).toISOString(),
+    updated_at:nowIso
+  };
+  try{
+    setSyncing(true,'Saving subscription…');
+    const saved=await db.adminUpsertSubscription(row);
+    await logAdminAction('admin.subscription.manage',{account_id:saved.account_id,store_id:saved.store_id,plan_code:saved.plan_code,status:saved.status},{store_id:saved.store_id,account_id:saved.account_id});
+    setSyncOk();
+    if(accountEl) accountEl.value='';
+    if(storeEl) storeEl.value='';
+    if(planEl) planEl.value='';
+    if(statusEl) statusEl.value='';
+    await adminLoad();
+  }catch(e){
+    setSyncErr(e.message);
+    S.adminError=e.message||'Unable to save subscription.';
+    render();
+  }
+}
+
+async function adminSetFreePlan(){
+  if(!S.adminAuthed) return;
+  const accountEl=document.getElementById('admin-sub-account');
+  const storeEl=document.getElementById('admin-sub-store');
+  const account_id=String(accountEl&&accountEl.value||'').trim();
+  const store_id=String(storeEl&&storeEl.value||'').trim();
+  if(!account_id||!store_id){ alert('Enter account_id and store_id first.'); return; }
+  const row={
+    account_id,
+    store_id,
+    plan_code:'ordering_usage',
+    status:'free',
+    trial_started_at:null,
+    trial_ends_at:null,
+    updated_at:new Date().toISOString()
+  };
+  try{
+    setSyncing(true,'Setting free plan…');
+    await db.adminUpsertSubscription(row);
+    await logAdminAction('admin.subscription.set_free',{account_id,store_id,plan_code:'ordering_usage',status:'free'},{store_id,account_id});
+    setSyncOk();
+    await adminLoad();
+  }catch(e){
+    setSyncErr(e.message);
+    S.adminError=e.message||'Unable to set free plan.';
+    render();
+  }
+}
+
+async function adminDeleteSub(accountId, storeId, planCode){
+  if(!S.adminAuthed) return;
+  const account_id=String(accountId||'').trim();
+  const store_id=String(storeId||'').trim();
+  const plan_code=String(planCode||'').trim();
+  if(!account_id||!store_id||!plan_code) return;
+  if(!confirm('Delete this subscription row?')) return;
+  try{
+    setSyncing(true,'Deleting subscription…');
+    await db.adminDeleteSubscription({account_id,store_id,plan_code});
+    await logAdminAction('admin.subscription.delete',{account_id,store_id,plan_code},{store_id,account_id});
+    setSyncOk();
+    await adminLoad();
+  }catch(e){
+    setSyncErr(e.message);
+    S.adminError=e.message||'Unable to delete subscription.';
+    render();
+  }
+}
+
+async function adminIssueRefund(){
+  if(!S.adminAuthed) return;
+  const accountEl=document.getElementById('admin-refund-account');
+  const storeEl=document.getElementById('admin-refund-store');
+  const amountEl=document.getElementById('admin-refund-amount');
+  const reasonEl=document.getElementById('admin-refund-reason');
+  const account_id=String(accountEl&&accountEl.value||'').trim()||null;
+  const store_id=String(storeEl&&storeEl.value||'').trim()||null;
+  const amount_cents=Math.max(0,parseInt(String(amountEl&&amountEl.value||'0').trim(),10)||0);
+  if(amount_cents<=0){ alert('Enter a refund amount in cents.'); return; }
+  const reason=String(reasonEl&&reasonEl.value||'').trim()||'admin_refund';
+  try{
+    setSyncing(true,'Issuing refund…');
+    const refund=await db.adminIssueRefund({
+      account_id,
+      store_id,
+      amount_cents,
+      reason,
+      status:'succeeded',
+      requested_by:null
+    });
+    await logAdminAction('admin.refund.issue',{refund_id:refund.id,amount_cents:refund.amount_cents,reason:refund.reason,status:refund.status},{store_id:refund.store_id||null,account_id:refund.account_id||null});
+    setSyncOk();
+    if(amountEl) amountEl.value='';
+    if(reasonEl) reasonEl.value='';
+    await adminLoad();
+  }catch(e){
+    setSyncErr(e.message);
+    S.adminError=e.message||'Unable to issue refund.';
+    render();
+  }
+}
+
 function fg(label,field,val,type,ph,suggestions){
   let input=`<input class="finput" type="${type}" id="f-${field}" value="${val}" placeholder="${ph}" oninput="updateForm('${field}',this.value)"${suggestions?` list="dl-${field}"`:''}></input>`;
   let dl=suggestions?`<datalist id="dl-${field}">${suggestions.map(s=>`<option value="${s}">`).join('')}</datalist>`:'';
@@ -2740,7 +3388,7 @@ function applyRouteFromHash(){
   __ckUrlApplying=true;
   try{
     const {tab,sub}=CK.parseRouteHash(location.hash);
-    const valid=['count','order','receive','usage','setup'];
+    const valid=['count','order','receive','usage','setup','admin'];
     S.tab=valid.includes(tab)?tab:'count';
     S.historyMode=S.tab==='count'&&sub==='history';
     if(S.tab==='count'){
@@ -2751,6 +3399,9 @@ function applyRouteFromHash(){
     if(S.tab==='order') S.orderView=sub==='walk'?'walk':'list';
     else S.orderView='list';
     if(S.tab!=='count') S.historyMode=false;
+    if(S.tab==='admin'&&!S.adminAuthed){
+      S.tab='setup';
+    }
     const want=CK.buildRouteHash(S.tab,{countView:S.countView,orderView:S.orderView,historyMode:S.historyMode});
     if(!location.hash||location.hash==='#'){
       history.replaceState(null,'',location.pathname+location.search+want);
@@ -2780,6 +3431,14 @@ function syncUrlFromState(){
 
 // ─── EVENT HANDLERS ──────────────────────────────────────────────────────────
 function setTab(t){
+  if(t==='admin'&&!S.adminAuthed){
+    promptAdminUnlock();
+    if(!S.adminAuthed) return;
+  }
+  if((t==='order'||t==='receive'||t==='usage')&&!canAccessFeature(t)){
+    showBanner('This feature is blocked by subscription settings.','warn');
+    return;
+  }
   S.tab=t; S.historyMode=false; S.editSessionId=null;
   if(t!=='count'){ S.countView='list'; }
   if(t!=='order'){ S.orderView='list'; }
@@ -3384,6 +4043,17 @@ async function loadFromDB(){
     ls.set('items',S.items);
     ls.set('sessions',S.sessions);
     ls.set('orders',S.orders);
+    if(S.dbSupportsBilling){
+      try{
+        const billingSnap=await db.adminLoadSnapshot();
+        S.billingCtx=billingSnap;
+        updateFeatureAccessFromSnapshot(billingSnap);
+      }catch{
+        updateFeatureAccessFromSnapshot(null);
+      }
+    }else{
+      updateFeatureAccessFromSnapshot(null);
+    }
     await mergeLayoutFromRemote();
     setSyncOk();
     syncCountFormAvailability();
@@ -3398,6 +4068,7 @@ function loadFromCache(){
   S.items = normalizeItemsForOrderMath(items||scopedSeedItems());
   S.sessions = ls.get('sessions')||[];
   S.orders = ls.get('orders')||[];
+  updateFeatureAccessFromSnapshot(null);
   syncCountFormAvailability();
 }
 
@@ -3419,6 +4090,7 @@ async function init(){
   restoreActiveStoreContext();
   await loadCkLogic();
   loadBarcodeModeSetting();
+  try{ S.adminAuthed=sessionStorage.getItem(SS_ADMIN_KEY)==='1'; }catch{ S.adminAuthed=false; }
 
   window.addEventListener('popstate',()=>{
     applyRouteFromHash();
