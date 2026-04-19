@@ -250,6 +250,11 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .t-fail{background:#fee2e2;color:#991b1b}
 .t-skip{background:#f3f4f6;color:#6b7280}
 .t-run{background:#dbeafe;color:#1e40af}
+/* Help */
+.help-step-list{margin:8px 0 0 18px;display:flex;flex-direction:column;gap:5px;font-size:12px;color:#374151;line-height:1.45}
+.help-step-list li strong{color:#111}
+.help-inline-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.help-note{font-size:11px;color:#6b7280;line-height:1.45;margin-top:8px}
 /* Empty state */
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:32px 14px;color:#9ca3af;text-align:center;font-size:12px}
 /* Sticky footer */
@@ -352,6 +357,10 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
     <button class="tab" id="t-setup" onclick="setTab('setup')">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       Setup
+    </button>
+    <button class="tab" id="t-help" onclick="setTab('help')">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 015.8 1c0 2-3 2.2-3 4"/><line x1="12" y1="17" x2="12" y2="17"/></svg>
+      Help
     </button>
     <button class="tab" id="t-admin" onclick="setTab('admin')">
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l3 4 5 .8-3.5 3.4.8 4.8L12 13l-5.3 2.9.8-4.8L4 6.8 9 6z"/><circle cx="12" cy="12" r="2.2"/></svg>
@@ -1938,6 +1947,7 @@ function render(){
   if(S.tab==='receive') m.innerHTML=inst+(canAccessFeature('receive')?renderReceive():renderFeatureGateBanner('receive'));
   if(S.tab==='usage')   m.innerHTML=inst+(canAccessFeature('usage')?renderUsage():renderFeatureGateBanner('usage'));
   if(S.tab==='setup')   m.innerHTML=inst+renderSetup();
+  if(S.tab==='help')    m.innerHTML=inst+renderHelp();
   if(S.tab==='admin')   m.innerHTML=inst+renderAdmin();
   if(S.tab==='order') scheduleDrawBarcodes();
   syncUrlFromState();
@@ -2835,6 +2845,84 @@ function renderUsage(){
   return h;
 }
 
+// ── HELP TAB ─────────────────────────────────────────────────────────────────
+function renderHelp(){
+  return `
+  <div class="pg-hdr">
+    <div>
+      <div class="pg-title">Help</div>
+      <div class="pg-sub">How to use CK Inventory day-to-day</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr-static">
+      <span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Quick start flow</span>
+    </div>
+    <div style="padding:10px">
+      <ol class="help-step-list" style="margin-top:0">
+        <li><strong>Count:</strong> open <b>Count</b>, enter on-hand quantities, then save the session.</li>
+        <li><strong>Order:</strong> open <b>Order</b> to review suggested quantities based on par and your latest count.</li>
+        <li><strong>Receive:</strong> after truck delivery, open <b>Receive</b> and confirm what arrived.</li>
+        <li><strong>Repeat:</strong> run the next count cycle to keep recommendations and usage accurate.</li>
+      </ol>
+      <div class="help-inline-actions">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('count')">Open Count</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('order')">Open Order</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('receive')">Open Receive</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr-static">
+      <span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Count tips</span>
+    </div>
+    <div style="padding:10px">
+      <ul class="help-step-list" style="margin-top:0">
+        <li>Use <strong>Walk-through</strong> to focus on one item at a time while moving through the store.</li>
+        <li>Use <strong>Full list</strong> if you prefer entering all quantities on one screen.</li>
+        <li>The progress bar and counter (<b>x / y</b>) show how many items are already entered.</li>
+        <li>Use the count settings button to apply <strong>manual order extras</strong> before logging an order.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr-static">
+      <span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Order and receive</span>
+    </div>
+    <div style="padding:10px">
+      <ul class="help-step-list" style="margin-top:0">
+        <li>Order quantities are calculated from your latest saved count and each item's par settings.</li>
+        <li>Adjust recommended values before placing an order if your store needs temporary changes.</li>
+        <li>When the truck arrives, confirm received quantities in <b>Receive</b> to close the cycle cleanly.</li>
+        <li>If something was not delivered, set the received quantity to <b>0</b> for that item.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr-static">
+      <span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Setup and usage</span>
+    </div>
+    <div style="padding:10px">
+      <ul class="help-step-list" style="margin-top:0">
+        <li>Manage catalog items, units, and sort order in <strong>Setup</strong>.</li>
+        <li>Keep item order clean in Setup so Count and Order match your store walk pattern.</li>
+        <li>Use <strong>Usage</strong> to review weekly consumption trends and spot par levels that may need tuning.</li>
+      </ul>
+      <div class="help-inline-actions">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('usage')">Open Usage</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('setup')">Open Setup</button>
+      </div>
+      <div class="help-note">
+        Tip: You can bookmark this page directly with <b>#/help</b> in the URL.
+      </div>
+    </div>
+  </div>`;
+}
+
 // ── SETUP TAB ────────────────────────────────────────────────────────────────
 function toggleDeveloperInfo(){
   S.showDeveloperInfo=!S.showDeveloperInfo;
@@ -3387,7 +3475,7 @@ function applyRouteFromHash(){
   __ckUrlApplying=true;
   try{
     const {tab,sub}=CK.parseRouteHash(location.hash);
-    const valid=['count','order','receive','usage','setup','admin'];
+    const valid=['count','order','receive','usage','setup','help','admin'];
     S.tab=valid.includes(tab)?tab:'count';
     S.historyMode=S.tab==='count'&&sub==='history';
     if(S.tab==='count'){

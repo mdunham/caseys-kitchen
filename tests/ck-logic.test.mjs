@@ -105,10 +105,12 @@ describe('routing', () => {
   it('parseRouteHash', () => {
     expect(parseRouteHash('#/order/walk').tab).toBe('order');
     expect(parseRouteHash('#/order/walk').sub).toBe('walk');
+    expect(parseRouteHash('#/help').tab).toBe('help');
     expect(parseRouteHash('').tab).toBe('count');
   });
   it('buildRouteHash', () => {
     expect(buildRouteHash('receive', {})).toBe('#/receive');
+    expect(buildRouteHash('help', {})).toBe('#/help');
     expect(buildRouteHash('count', { countView: 'walk', historyMode: false })).toBe('#/count/walk');
     expect(buildRouteHash('count', { historyMode: true })).toBe('#/count/history');
   });
