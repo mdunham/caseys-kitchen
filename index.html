@@ -391,11 +391,15 @@ let SS_PIN_KEY = `ck2_pin_${ACTIVE_STORE.slug}`;
 let LS_PREFIX = `ck2_${ACTIVE_STORE.slug}_`;
 let STORE_LAYOUT_ROW_ID = `layout:${ACTIVE_STORE.id}`;
 const LEGACY_LAYOUT_ROW_ID = 'global';
+const TEMPLATE_STORE_ID = 'store_1406';
+const TEMPLATE_STORE_SLUG = 'store1406';
+const INITIAL_SETUP_STATUS_KEY = 'initialSetupStatus';
+const ITEM_SEED_TEMPLATE_SETTINGS_KEY = 'item_seed_template';
 const DEFAULT_TRIAL_DAYS = 45;
 const ADMIN_PIN = '9090';
 const SS_ADMIN_KEY = 'ck2_admin_authed';
 
-const SEED_ITEMS = [
+const FALLBACK_SEED_ITEMS = [
   {id:'s1',name:'Hot Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1001',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:1},
   {id:'s2',name:'Mild Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1002',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:2},
   {id:'s3',name:'Pepperoni',cat_l1:'Freezer',cat_l2:'Meats',par:4,unit:'cs',code:'CSY1003',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:3},
@@ -409,11 +413,189 @@ const SEED_ITEMS = [
 ];
 
 function scopedSeedItems(){
-  return SEED_ITEMS.map(item=>{
+  return FALLBACK_SEED_ITEMS.map(item=>{
     const rawId=String(item.id||'').trim();
     const scopedId=rawId.startsWith(ACTIVE_STORE.slug+':')?rawId:`${ACTIVE_STORE.slug}:${rawId}`;
     return {...item,id:scopedId,store_id:ACTIVE_STORE.id};
   });
+}
+
+function scopedTemplateSeedItems(templateItems){
+  const prefixSlug = `${TEMPLATE_STORE_SLUG}:`;
+  const prefixId = `${TEMPLATE_STORE_ID}:`;
+  return (templateItems||[]).map((item,ix)=>{
+    const rawId=String(item?.id||'').trim();
+    let suffix=rawId;
+    if(rawId.startsWith(prefixSlug)) suffix=rawId.slice(prefixSlug.length);
+    else if(rawId.startsWith(prefixId)) suffix=rawId.slice(prefixId.length);
+    else if(rawId.includes(':')&&ACTIVE_STORE.id!==TEMPLATE_STORE_ID) suffix=rawId.split(':').slice(1).join(':');
+    if(!suffix) suffix=`item:${ix+1}`;
+    const sortRaw=parseFloat(item?.sort_order);
+    const parRaw=parseFloat(item?.par);
+    const packRaw=parseFloat(item?.order_pack_qty);
+    const triggerRaw=String(item?.reorder_trigger??'').trim();
+    const triggerVal=triggerRaw===''?null:parseFloat(triggerRaw);
+    const unit=String(item?.unit||'').trim()||'cs';
+    const orderUnitRaw=String(item?.order_unit||'').trim();
+    return {
+      id:`${ACTIVE_STORE.slug}:${suffix}`,
+      name:String(item?.name||`Item ${ix+1}`),
+      cat_l1:String(item?.cat_l1||'Other'),
+      cat_l2:String(item?.cat_l2||'General'),
+      par:Number.isFinite(parRaw)&&parRaw>0?parRaw:1,
+      unit,
+      code:String(item?.code||''),
+      upc:String(item?.upc||''),
+      order_unit:orderUnitRaw||unit,
+      order_pack_qty:Number.isFinite(packRaw)&&packRaw>0?packRaw:1,
+      reorder_trigger:Number.isFinite(triggerVal)?triggerVal:null,
+      sort_order:Number.isFinite(sortRaw)?sortRaw:(ix+1),
+      store_id:ACTIVE_STORE.id
+    };
+  });
+}
+
+function itemIdSuffix(rawId){
+  const id=String(rawId||'').trim();
+  if(!id) return '';
+  const parts=id.split(':');
+  if(parts.length<=1) return id;
+  return parts.slice(1).join(':');
+}
+
+function scopedItemIdForStore(store, suffix){
+  const cleaned=String(suffix||'').trim();
+  if(!cleaned) return '';
+  return `${store.slug}:${cleaned}`;
+}
+
+function normalizeTemplateItemRows(items){
+  const rows=(items||[]).map((item,ix)=>{
+    const suffix=itemIdSuffix(item?.id)||String(item?.seed_key||'').trim()||`item:${ix+1}`;
+    const parRaw=parseFloat(item?.par);
+    const packRaw=parseFloat(item?.order_pack_qty);
+    const triggerRaw=String(item?.reorder_trigger??'').trim();
+    const triggerVal=triggerRaw===''?null:parseFloat(triggerRaw);
+    const sortRaw=parseFloat(item?.sort_order);
+    const unit=String(item?.unit||'').trim()||'cs';
+    const orderUnitRaw=String(item?.order_unit||'').trim();
+    return {
+      seed_key:suffix,
+      name:String(item?.name||`Item ${ix+1}`).trim()||`Item ${ix+1}`,
+      cat_l1:String(item?.cat_l1||'Other').trim()||'Other',
+      cat_l2:String(item?.cat_l2||'General').trim()||'General',
+      par:Number.isFinite(parRaw)&&parRaw>0?parRaw:1,
+      unit,
+      code:String(item?.code||'').trim(),
+      upc:String(item?.upc||'').trim(),
+      order_unit:orderUnitRaw||unit,
+      order_pack_qty:Number.isFinite(packRaw)&&packRaw>0?packRaw:1,
+      reorder_trigger:Number.isFinite(triggerVal)?triggerVal:null,
+      sort_order:Number.isFinite(sortRaw)?sortRaw:(ix+1)
+    };
+  });
+  const seen=new Set();
+  return rows.filter(row=>{
+    if(!row.seed_key||seen.has(row.seed_key)) return false;
+    seen.add(row.seed_key);
+    return true;
+  });
+}
+
+function templateRowsToScopedItems(templateRows, store){
+  return normalizeTemplateItemRows(templateRows).map((row,ix)=>({
+    id:scopedItemIdForStore(store,row.seed_key)||`${store.slug}:item:${ix+1}`,
+    name:row.name,
+    cat_l1:row.cat_l1,
+    cat_l2:row.cat_l2,
+    par:row.par,
+    unit:row.unit,
+    code:row.code,
+    upc:row.upc,
+    order_unit:row.order_unit,
+    order_pack_qty:row.order_pack_qty,
+    reorder_trigger:row.reorder_trigger,
+    sort_order:row.sort_order,
+    store_id:store.id
+  }));
+}
+
+
+function itemForTemplateExportShape(item){
+  const rows=normalizeTemplateItemRows([item]);
+  return rows[0]||null;
+}
+
+function serializeTemplateForSettings(payload){
+  const rows=normalizeTemplateItemRows(payload&&payload.template_items);
+  if(!rows.length) return null;
+  return {
+    version: 1,
+    source: String(payload&&payload.source||'manual').trim()||'manual',
+    source_store_id: payload&&payload.source_store_id ? String(payload.source_store_id) : null,
+    updated_at: new Date().toISOString(),
+    updated_by_store_id: payload&&payload.updated_by_store_id ? String(payload.updated_by_store_id) : ACTIVE_STORE.id,
+    item_count: rows.length,
+    template_items: rows
+  };
+}
+
+function parseTemplateFromSettings(settingsObj){
+  if(!settingsObj||typeof settingsObj!=='object') return null;
+  const candidate=settingsObj&&settingsObj[ITEM_SEED_TEMPLATE_SETTINGS_KEY]!=null
+    ? settingsObj[ITEM_SEED_TEMPLATE_SETTINGS_KEY]
+    : settingsObj;
+  if(!candidate||typeof candidate!=='object') return null;
+  const rows=normalizeTemplateItemRows(candidate.template_items||candidate.items||[]);
+  if(!rows.length) return null;
+  return {
+    version: Number(candidate.version)||1,
+    source: String(candidate.source||'manual').trim()||'manual',
+    source_store_id: candidate.source_store_id?String(candidate.source_store_id):null,
+    updated_at: candidate.updated_at||null,
+    updated_by_store_id: candidate.updated_by_store_id?String(candidate.updated_by_store_id):null,
+    item_count: rows.length,
+    template_items: rows
+  };
+}
+
+function globalSeedTemplateFromSnapshot(snapshot){
+  const rows=snapshot&&Array.isArray(snapshot.systemSettings)?snapshot.systemSettings:[];
+  const row=rows.find(r=>String(r&&r.id||'')==='default')||rows[0]||null;
+  if(!row||!row.settings||typeof row.settings!=='object') return null;
+  return parseTemplateFromSettings(row.settings);
+}
+
+function normalizeScopeMode(mode){
+  const m=String(mode||'active').trim().toLowerCase();
+  if(m==='all'||m==='selected') return m;
+  return 'active';
+}
+
+function normalizeStoreIdList(ids){
+  const arr=Array.isArray(ids)?ids:[];
+  return [...new Set(arr.map(v=>String(v||'').trim()).filter(Boolean))];
+}
+
+function listStoreContexts(snapshot){
+  const fromSnap=(snapshot&&Array.isArray(snapshot.stores)?snapshot.stores:[])
+    .map(normalizeStoreCtx)
+    .filter(Boolean);
+  const map=new Map();
+  [ACTIVE_STORE,...STORE_DIRECTORY,...fromSnap].forEach(store=>{
+    if(!store||!store.id) return;
+    if(!map.has(store.id)) map.set(store.id,store);
+  });
+  return [...map.values()];
+}
+
+function resolveStoreIdsForScope(scope, snapshot){
+  const mode=normalizeScopeMode(scope&&scope.mode);
+  if(mode==='all') return listStoreContexts(snapshot).map(s=>s.id);
+  if(mode==='selected'){
+    return normalizeStoreIdList(scope&&scope.storeIds);
+  }
+  return [ACTIVE_STORE.id];
 }
 
 function makeEntityId(kind){
@@ -544,6 +726,10 @@ const S = {
   setupCodeSavingId: null,
   setupCodeLastTapId: null,
   setupCodeLastTapAt: 0,
+  /** New-store onboarding: force per-item par walkthrough before first count. */
+  initialSetupActive: false,
+  initialSetupIndex: 0,
+  initialSetupParDraft: {},
   /** Client-local order code rendering mode: qr | qr8 | barcode */
   barcodeMode: 'qr',
 };
@@ -568,6 +754,38 @@ const ls = {
   get(k){ try{ const v=localStorage.getItem(LS_PREFIX+k); return v?JSON.parse(v):null; }catch{ return null; }},
   set(k,v){ try{ localStorage.setItem(LS_PREFIX+k,JSON.stringify(v)); }catch{} }
 };
+
+function readInitialSetupStatus(){
+  const raw=ls.get(INITIAL_SETUP_STATUS_KEY);
+  return raw&&typeof raw==='object'?raw:{};
+}
+
+function writeInitialSetupStatus(patch){
+  const cur=readInitialSetupStatus();
+  ls.set(INITIAL_SETUP_STATUS_KEY,{...cur,...patch});
+}
+
+function markInitialSetupPending(meta={}){
+  writeInitialSetupStatus({
+    parSetupDone:false,
+    pending:true,
+    store_id:ACTIVE_STORE.id,
+    template_store_id:meta.template_store_id||null,
+    seed_source:meta.seed_source||null,
+    seeded_at:new Date().toISOString(),
+    item_count:Number(meta.item_count)||0
+  });
+}
+
+function markInitialSetupComplete(meta={}){
+  writeInitialSetupStatus({
+    parSetupDone:true,
+    pending:false,
+    completed_at:new Date().toISOString(),
+    item_count:Number(meta.item_count)||0,
+    updated_count:Number(meta.updated_count)||0
+  });
+}
 
 const BARCODE_MODE_OPTS={
   qr:'Normal QR code',
@@ -668,10 +886,193 @@ const db = {
   },
 
   async seedItems(){
-    const rows=scopedSeedItems().map(attachStoreScope);
+    let rows=[];
+    let seedSource='fallback_seed_list';
+    let templateStoreId=null;
+    const globalTemplate=await db.loadGlobalSeedTemplate();
+    const parsedTemplate=parseTemplateFromSettings(globalTemplate);
+    if(parsedTemplate&&Array.isArray(parsedTemplate.template_items)&&parsedTemplate.template_items.length){
+      rows=templateRowsToScopedItems(parsedTemplate.template_items,ACTIVE_STORE).map(attachStoreScope);
+      seedSource='global_template';
+      templateStoreId=parsedTemplate.source_store_id||null;
+    }
+    if(!rows.length&&S.dbSupportsStoreScope){
+      try{
+        const {data,error}=await sb
+          .from('ck_items')
+          .select('*')
+          .eq('store_id',TEMPLATE_STORE_ID)
+          .order('sort_order',{ascending:true});
+        if(error) throw error;
+        if(Array.isArray(data)&&data.length){
+          rows=scopedTemplateSeedItems(data).map(attachStoreScope);
+          seedSource='template_store_1406';
+          templateStoreId=TEMPLATE_STORE_ID;
+        }
+      }catch(e){
+        console.warn('template seed failed',e);
+      }
+    }
+    if(!rows.length){
+      rows=scopedSeedItems().map(attachStoreScope);
+    }
     const {error} = await sb.from('ck_items').upsert(rows,{onConflict:'id'});
     if(error) throw error;
+    return {rows,seedSource,templateStoreId};
+  },
+
+  async upsertItems(items){
+    const ts=new Date().toISOString();
+    const rows=(items||[]).map(item=>attachStoreScope({...item,updated_at:ts}));
+    if(!rows.length) return;
+    const {error}=await sb.from('ck_items').upsert(rows,{onConflict:'id'});
+    if(error) throw error;
+  },
+
+  async loadGlobalSeedTemplate(){
+    try{
+      const {data,error}=await sb.from('ck_system_settings').select('settings').eq('id','default').maybeSingle();
+      if(error) throw error;
+      return data&&data.settings?data.settings:null;
+    }catch{
+      return null;
+    }
+  },
+
+  async setGlobalSeedTemplate(payload){
+    const settings=await db.loadGlobalSeedTemplate()||{};
+    const next={
+      ...settings,
+      [ITEM_SEED_TEMPLATE_SETTINGS_KEY]:{
+        updated_at:new Date().toISOString(),
+        source:String(payload&&payload.source||'manual').trim()||'manual',
+        source_store_id:payload&&payload.source_store_id?String(payload.source_store_id):null,
+        updated_by_store_id:payload&&payload.updated_by_store_id?String(payload.updated_by_store_id):ACTIVE_STORE.id,
+        template_items:normalizeTemplateItemRows(payload&&payload.template_items||[])
+      }
+    };
+    const row={id:'default',settings:next,updated_at:new Date().toISOString()};
+    const {error}=await sb.from('ck_system_settings').upsert(row,{onConflict:'id'});
+    if(error) throw error;
+    return next;
+  },
+
+  async listAllStores(){
+    const {data,error}=await sb.from('ck_stores').select('*').order('store_code',{ascending:true});
+    if(error) throw error;
+    return (data||[]).map(normalizeStoreCtx).filter(Boolean);
+  },
+
+  async loadItemsForStore(storeId){
+    const sid=String(storeId||'').trim();
+    if(!sid) return [];
+    const {data,error}=await sb.from('ck_items').select('*').eq('store_id',sid).order('sort_order',{ascending:true});
+    if(error) throw error;
+    return data||[];
+  },
+
+  async replaceItemsForStore(storeId, items){
+    const sid=String(storeId||'').trim();
+    if(!sid) throw new Error('store_id is required.');
+    const stores=await db.listAllStores();
+    const ctx=stores.find(s=>s.id===sid);
+    if(!ctx) throw new Error(`Store not found: ${sid}`);
+    const rows=templateRowsToScopedItems(items||[],ctx).map(row=>({...row,updated_at:new Date().toISOString()}));
+    const {error:delErr}=await sb.from('ck_items').delete().eq('store_id',sid);
+    if(delErr) throw delErr;
+    if(rows.length){
+      const {error:insErr}=await sb.from('ck_items').upsert(rows,{onConflict:'id'});
+      if(insErr) throw insErr;
+    }
     return rows;
+  },
+
+  async replaceItemsForStores(storeIds, items){
+    const ids=[...new Set((storeIds||[]).map(v=>String(v||'').trim()).filter(Boolean))];
+    const out={};
+    for(const sid of ids){
+      out[sid]=await db.replaceItemsForStore(sid,items||[]);
+    }
+    return out;
+  },
+
+  async upsertItemsForScope(scope, storeIds, item, opts={}){
+    const mode=normalizeScopeMode(scope);
+    const stores=await db.listAllStores();
+    const selectedIds=mode==='active'
+      ? [ACTIVE_STORE.id]
+      : mode==='all'
+        ? stores.map(s=>s.id)
+        : [...new Set((storeIds||[]).map(v=>String(v||'').trim()).filter(Boolean))];
+    if(!selectedIds.length) throw new Error('Select at least one store.');
+    const suffix=itemIdSuffix(item&&item.id)||String(item&&item.seed_key||'').trim()||makeEntityId('item').split(':').slice(1).join(':');
+    const ts=new Date().toISOString();
+    const shouldInsertAll=opts&&opts.insertMissing===true;
+    const updatedStores=[];
+    const currentRowsByStore={};
+    if(shouldInsertAll){
+      for(const sid of selectedIds){
+        currentRowsByStore[sid]=await db.loadItemsForStore(sid);
+      }
+    }
+    for(const sid of selectedIds){
+      const ctx=stores.find(s=>s.id===sid);
+      if(!ctx) continue;
+      const scopedId=scopedItemIdForStore(ctx,suffix);
+      let existing=null;
+      if(shouldInsertAll){
+        existing=(currentRowsByStore[sid]||[]).find(r=>String(r.id||'')===scopedId)||null;
+      }else{
+        existing=S.items.find(r=>String(r.id||'')===scopedId)||null;
+      }
+      if(!existing&&opts&&opts.onlyExisting) continue;
+      const base=existing||{};
+      const row={
+        ...base,
+        id:scopedId,
+        store_id:sid,
+        name:item&&item.name!=null?item.name:base.name,
+        cat_l1:item&&item.cat_l1!=null?item.cat_l1:base.cat_l1,
+        cat_l2:item&&item.cat_l2!=null?item.cat_l2:(base.cat_l2||''),
+        par:item&&item.par!=null?item.par:base.par,
+        unit:item&&item.unit!=null?item.unit:base.unit,
+        code:item&&item.code!=null?item.code:base.code,
+        upc:item&&item.upc!=null?item.upc:base.upc,
+        order_unit:item&&item.order_unit!=null?item.order_unit:base.order_unit,
+        order_pack_qty:item&&item.order_pack_qty!=null?item.order_pack_qty:base.order_pack_qty,
+        reorder_trigger:item&&Object.prototype.hasOwnProperty.call(item,'reorder_trigger')?item.reorder_trigger:base.reorder_trigger,
+        sort_order:item&&item.sort_order!=null?item.sort_order:(base.sort_order||1),
+        updated_at:ts
+      };
+      const {error}=await sb.from('ck_items').upsert(row,{onConflict:'id'});
+      if(error) throw error;
+      updatedStores.push(sid);
+    }
+    return [...new Set(updatedStores)];
+  },
+
+  async deleteItemForScope(scope, storeIds, itemId){
+    const mode=normalizeScopeMode(scope);
+    const stores=await db.listAllStores();
+    const selectedIds=mode==='active'
+      ? [ACTIVE_STORE.id]
+      : mode==='all'
+        ? stores.map(s=>s.id)
+        : [...new Set((storeIds||[]).map(v=>String(v||'').trim()).filter(Boolean))];
+    if(!selectedIds.length) throw new Error('Select at least one store.');
+    const suffix=itemIdSuffix(itemId);
+    if(!suffix) return [];
+    const removed=[];
+    for(const sid of selectedIds){
+      const ctx=stores.find(s=>s.id===sid);
+      if(!ctx) continue;
+      const scopedId=scopedItemIdForStore(ctx,suffix);
+      if(!scopedId) continue;
+      const {error}=await sb.from('ck_items').delete().eq('id',scopedId);
+      if(error) throw error;
+      removed.push(sid);
+    }
+    return [...new Set(removed)];
   },
 
   async upsertItem(item){
@@ -803,7 +1204,8 @@ const db = {
       systemSettings:[],
       prices:[],
       refunds:[],
-      audit:[]
+      audit:[],
+      allItems:[]
     };
     const tableReads=[
       ['accounts','ck_accounts','*'],
@@ -815,7 +1217,8 @@ const db = {
       ['systemSettings','ck_system_settings','*'],
       ['prices','ck_price_book','*'],
       ['refunds','ck_refunds','*'],
-      ['audit','ck_audit_logs','*']
+      ['audit','ck_audit_logs','*'],
+      ['allItems','ck_items','*']
     ];
     for(const [key,table,sel] of tableReads){
       try{
@@ -1942,7 +2345,7 @@ function render(){
   if(!m) return;
   updateScheduleChip();
   const inst=renderInstallOffer();
-  if(S.tab==='count')   m.innerHTML=inst+(S.historyMode ? renderHistory() : renderCount());
+  if(S.tab==='count')   m.innerHTML=inst+(S.historyMode ? renderHistory() : (S.initialSetupActive?renderInitialParSetup():renderCount()));
   if(S.tab==='order')   m.innerHTML=inst+(canAccessFeature('order')?renderOrder():renderFeatureGateBanner('order'));
   if(S.tab==='receive') m.innerHTML=inst+(canAccessFeature('receive')?renderReceive():renderFeatureGateBanner('receive'));
   if(S.tab==='usage')   m.innerHTML=inst+(canAccessFeature('usage')?renderUsage():renderFeatureGateBanner('usage'));
@@ -2033,6 +2436,192 @@ function walkQtyKey(ev){
     if(ev.shiftKey) walkGo(-1);
     else walkGo(1);
   }
+}
+
+function initialParFlat(){
+  return flattenWalkItems(getOrderedGroups(S.items));
+}
+
+function needsInitialParSetup(status=S.itemsStatus, items=S.items){
+  if(!S.dbSupportsStoreScope) return false;
+  if(ACTIVE_STORE.id===TEMPLATE_STORE_ID) return false;
+  if(!(items||[]).length) return false;
+  if(S.sessions&&S.sessions.length>0) return false;
+  const st=status&&typeof status==='object'?status:readInitialSetupStatus();
+  if(st&&st.parSetupDone===true) return false;
+  return true;
+}
+
+function startInitialParSetup(opts={}){
+  const flat=initialParFlat();
+  if(!flat.length){
+    S.initialSetupActive=false;
+    S.initialSetupIndex=0;
+    S.initialSetupParDraft={};
+    return;
+  }
+  const status=readInitialSetupStatus();
+  const incomingDraft=opts&&opts.draft&&typeof opts.draft==='object'?opts.draft:{};
+  const keepDraft=opts&&opts.keepDraft===true;
+  const baseDraft=keepDraft?S.initialSetupParDraft:{};
+  const mergedDraft={...baseDraft,...incomingDraft};
+  if(status&&status.pending&&status.parSetupDone!==true){
+    flat.forEach(item=>{
+      if(mergedDraft[item.id]===undefined){
+        const n=parseFloat(item.par);
+        mergedDraft[item.id]=Number.isFinite(n)?String(n):'';
+      }
+    });
+  }
+  S.initialSetupActive=true;
+  S.initialSetupParDraft=mergedDraft;
+  const rawIx=opts&&Number.isFinite(opts.startIndex)?opts.startIndex:0;
+  S.initialSetupIndex=Math.max(0,Math.min(flat.length-1,rawIx));
+  S.tab='count';
+  S.historyMode=false;
+  S.countView='walk';
+}
+
+function setInitialParDraft(itemId,val){
+  S.initialSetupParDraft[itemId]=val;
+}
+
+function initialParQtyKey(ev){
+  if(ev.key==='Enter'&&!ev.shiftKey){
+    ev.preventDefault();
+    void saveInitialParAndMove(1);
+    return;
+  }
+  if(ev.key==='Tab'){
+    ev.preventDefault();
+    if(ev.shiftKey) void saveInitialParAndMove(-1);
+    else void saveInitialParAndMove(1);
+  }
+}
+
+async function saveInitialParAndMove(delta){
+  if(!S.initialSetupActive||isAppBusy()) return;
+  const flat=initialParFlat();
+  if(!flat.length){
+    skipInitialParSetup();
+    return;
+  }
+  const idx=Math.max(0,Math.min(S.initialSetupIndex,flat.length-1));
+  const item=flat[idx];
+  const raw=S.initialSetupParDraft[item.id];
+  const parsed=parseFloat(raw);
+  if(!Number.isFinite(parsed)||parsed<=0){
+    alert('Enter a par greater than 0 before moving to the next item.');
+    return;
+  }
+  const rounded=Math.round(parsed*100)/100;
+  S.initialSetupParDraft[item.id]=String(rounded);
+  const nextItems=[...S.items];
+  const itemIx=nextItems.findIndex(i=>i.id===item.id);
+  if(itemIx<0) return;
+  nextItems[itemIx]={...nextItems[itemIx],par:rounded};
+  try{
+    setSyncing(true,'Saving par levels…');
+    await db.upsertItems(nextItems);
+    S.items=normalizeItemsForOrderMath(nextItems);
+    ls.set('items',S.items);
+    if(delta<0&&idx>0){
+      S.initialSetupIndex=idx-1;
+      setSyncOk();
+      render();
+      queueInitialParFocus();
+      return;
+    }
+    if(delta>0&&idx<flat.length-1){
+      S.initialSetupIndex=idx+1;
+      setSyncOk();
+      render();
+      queueInitialParFocus();
+      return;
+    }
+    markInitialSetupComplete({item_count:flat.length,updated_count:flat.length});
+    S.initialSetupActive=false;
+    S.initialSetupIndex=0;
+    S.initialSetupParDraft={};
+    syncCountFormAvailability();
+    setSyncOk();
+    showBanner('Initial par setup saved. Start your first count.','ok');
+    render();
+  }catch(e){
+    setSyncErr(e.message);
+    render();
+  }
+}
+
+function skipInitialParSetup(){
+  markInitialSetupComplete({item_count:S.items.length,updated_count:0});
+  S.initialSetupActive=false;
+  S.initialSetupIndex=0;
+  S.initialSetupParDraft={};
+  syncCountFormAvailability();
+  render();
+}
+
+function queueInitialParFocus(){
+  requestAnimationFrame(()=>{
+    const q=document.getElementById('initial-par-input');
+    if(q){
+      try{ q.focus(); q.select(); }catch{}
+    }
+  });
+}
+
+function renderInitialParSetup(){
+  const flat=initialParFlat();
+  if(!flat.length){
+    S.initialSetupActive=false;
+    return renderCount();
+  }
+  S.initialSetupIndex=Math.max(0,Math.min(S.initialSetupIndex,flat.length-1));
+  const item=flat[S.initialSetupIndex];
+  if(S.initialSetupParDraft[item.id]===undefined){
+    const n=parseFloat(item.par);
+    S.initialSetupParDraft[item.id]=Number.isFinite(n)?String(n):'';
+  }
+  const val=S.initialSetupParDraft[item.id];
+  const l1=item.cat_l1||'Other';
+  const l2=item.cat_l2||'General';
+  const pct=Math.round(((S.initialSetupIndex+1)/flat.length)*100);
+  const prevDisabled=S.initialSetupIndex<=0?' disabled':'';
+  const nextLbl=S.initialSetupIndex>=flat.length-1?'Finish setup':'Save & next';
+  return `
+  <div class="pg-hdr">
+    <div><div class="pg-title">Initial Store Setup</div><div class="pg-sub">Set par for every item copied from Store 1406</div></div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span class="badge">${S.initialSetupIndex+1}/${flat.length}</span>
+    </div>
+  </div>
+  <div class="seg-row" style="margin-bottom:8px">
+    <button type="button" class="seg on" disabled>Par walkthrough</button>
+  </div>
+  <div class="prog" style="margin-bottom:10px"><div class="prog-fill" style="width:${pct}%"></div></div>
+  <div class="card walk-card">
+    <div class="walk-breadcrumb">${escapeHtml(l1)} › ${escapeHtml(l2)}</div>
+    <div class="walk-name">${escapeHtml(item.name)}</div>
+    <div class="walk-meta">Current par <b style="color:var(--ck-red)">${fmtQty(item.par)}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(itemScanMeta(item))}</span></div>
+    <div class="walk-qty-strip">
+      <button type="button" class="walk-float-btn walk-float-prev" onclick="saveInitialParAndMove(-1)" aria-label="Previous item"${prevDisabled}><span class="walk-float-icon" aria-hidden="true">‹</span><span class="walk-float-lbl">Prev</span></button>
+      <div class="walk-qty-center">
+        <input class="walk-qty" id="initial-par-input" type="number" min="0.5" step="0.5" value="${escapeHtml(val)}" placeholder="Par" inputmode="decimal"
+          oninput="setInitialParDraft('${item.id}',this.value)" onkeydown="initialParQtyKey(event)">
+        <div class="ulbl" style="margin-top:4px">${escapeHtml(item.unit)}</div>
+      </div>
+      <button type="button" class="walk-float-btn walk-float-next" onclick="saveInitialParAndMove(1)" aria-label="Save and next item"><span class="walk-float-icon" aria-hidden="true">›</span><span class="walk-float-lbl">${nextLbl}</span></button>
+    </div>
+    <div class="item-meta" style="text-align:center">Enter the store par for this item, then continue.</div>
+  </div>
+  <div class="sticky-footer">
+    <div class="sticky-footer-row between">
+      <button class="btn btn-secondary btn-sm" onclick="skipInitialParSetup()">Skip for now</button>
+      <button class="btn btn-primary btn-sm" onclick="saveInitialParAndMove(1)">${nextLbl}</button>
+    </div>
+    ${stickyFooterCopyright()}
+  </div>`;
 }
 
 /** Tab / Shift+Tab between qty fields in category order; opens collapsed sections when needed */
@@ -2951,6 +3540,7 @@ function renderSetup(){
       ${fg('Reorder trigger (count units)','reorder_trigger',f.reorder_trigger==null?'':f.reorder_trigger,'number','Order only when on hand is <= this value (leave blank for none)')}
       ${fg('UPC (scanner barcode)','upc',f.upc||'','text','e.g. 012345678905')}
       ${fg('Order code (legacy/internal)','code',f.code||'','text','e.g. CSY1001')}
+      ${renderItemSeedScopeFields()}
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn btn-primary" onclick="saveItem()">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
@@ -2993,6 +3583,22 @@ function renderSetup(){
       </div>
       ${S.testResults?renderTestResults():''}
     </div>`:''}
+  </div>`;
+
+  const seedTemplate=globalSeedTemplateFromSnapshot(S.adminSnapshot);
+  const templateCount=seedTemplate&&Array.isArray(seedTemplate.template_items)?seedTemplate.template_items.length:0;
+  const templateSource=seedTemplate&&seedTemplate.source?seedTemplate.source:'none';
+  h+=`<div class="form-card" style="margin-bottom:7px">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:6px">Import / Export item settings</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="exportItemSeedTemplate()">Export current store</button>
+      <button class="btn btn-secondary btn-sm" onclick="importItemSeedTemplate()">Import to current store</button>
+      <button class="btn btn-primary btn-sm" onclick="useCurrentStoreAsSeedTemplate()">Set as new-store seed</button>
+    </div>
+    <div style="font-size:11px;color:#6b7280;margin-top:7px;line-height:1.4">
+      Default new-store seed: <b>${templateCount||0}</b> items · source <b>${escapeHtml(templateSource)}</b>.
+      Export creates JSON for sharing. Import replaces item settings for this store and updates the default seed template.
+    </div>
   </div>`;
 
   h+=`<div class="banner banner-info" style="margin-bottom:7px;font-size:11px">
@@ -3526,6 +4132,10 @@ function setTab(t){
     showBanner('This feature is blocked by subscription settings.','warn');
     return;
   }
+  if(S.initialSetupActive&&t!=='count'){
+    showBanner('Finish initial par setup before leaving Count.','warn');
+    return;
+  }
   S.tab=t; S.historyMode=false; S.editSessionId=null;
   if(t!=='count'){ S.countView='list'; }
   if(t!=='order'){ S.orderView='list'; }
@@ -3538,6 +4148,10 @@ function setTab(t){
 function toggleCat(key){ S.expanded[key]=!S.expanded[key]; render(); }
 
 function setDraft(id,val){
+  if(S.initialSetupActive){
+    setInitialParDraft(id,val);
+    return;
+  }
   S.draft[id]=val;
   const items=S.items, d=S.draft;
   const counted=items.filter(i=>d[i.id]!==undefined&&d[i.id]!=='').length;
@@ -3829,26 +4443,251 @@ async function commitQuickEditItemCode(id){
   }
 }
 
-function startAdd(){ clearQuickEditItemCode(); S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',order_unit:'cs',order_pack_qty:'1',reorder_trigger:'',upc:'',code:''}; render(); }
+function startAdd(){
+  clearQuickEditItemCode();
+  S.formView='add';
+  S.editItemId=null;
+  S.formData={
+    name:'',
+    cat_l1:'',
+    cat_l2:'',
+    par:'',
+    unit:'cs',
+    order_unit:'cs',
+    order_pack_qty:'1',
+    reorder_trigger:'',
+    upc:'',
+    code:'',
+    scope:'active',
+    targetStoreIds:[ACTIVE_STORE.id]
+  };
+  render();
+}
 function startEdit(id){
   clearQuickEditItemCode();
   const item=S.items.find(i=>i.id===id); if(!item) return;
   S.formView='edit'; S.editItemId=id;
   const triggerRaw=parseFloat(item.reorder_trigger);
   const triggerDisplay=Number.isFinite(triggerRaw)?String(triggerRaw):'';
-  S.formData={name:item.name,cat_l1:item.cat_l1,cat_l2:item.cat_l2,par:String(item.par),unit:item.unit,order_unit:itemOrderUnitLabel(item),order_pack_qty:String(itemOrderPackQty(item)),reorder_trigger:triggerDisplay,upc:item.upc||'',code:item.code};
+  S.formData={
+    name:item.name,
+    cat_l1:item.cat_l1,
+    cat_l2:item.cat_l2,
+    par:String(item.par),
+    unit:item.unit,
+    order_unit:itemOrderUnitLabel(item),
+    order_pack_qty:String(itemOrderPackQty(item)),
+    reorder_trigger:triggerDisplay,
+    upc:item.upc||'',
+    code:item.code,
+    scope:'active',
+    targetStoreIds:[ACTIVE_STORE.id]
+  };
   render();
 }
 function cancelForm(){ clearQuickEditItemCode(); S.formView=null; S.editItemId=null; S.formData=null; render(); }
 function updateForm(f,v){ if(!S.formData) S.formData={}; S.formData[f]=v; }
+
+function seedScopeMultiChanged(sel){
+  if(!sel) return;
+  const vals=Array.from(sel.selectedOptions||[]).map(o=>o.value);
+  updateForm('targetStoreIds',vals);
+}
+
+function itemSeedScopeLabel(mode){
+  if(mode==='all') return 'all stores';
+  if(mode==='selected') return 'selected stores';
+  return 'active store';
+}
+
+function ensureAdminSnapshotStores(){
+  const cur=(S.adminSnapshot&&Array.isArray(S.adminSnapshot.stores)?S.adminSnapshot.stores:[]).map(normalizeStoreCtx).filter(Boolean);
+  if(cur.length) return cur;
+  const merged=listStoreContexts(S.adminSnapshot);
+  const snap={...(S.adminSnapshot||{})};
+  snap.stores=merged;
+  S.adminSnapshot=snap;
+  return merged;
+}
+
+function renderItemSeedScopeFields(){
+  const f=S.formData||{};
+  const mode=normalizeScopeMode(f.scope||'active');
+  const stores=ensureAdminSnapshotStores()
+    .slice()
+    .sort((a,b)=>String(a.store_code||'').localeCompare(String(b.store_code||''))||String(a.name||'').localeCompare(String(b.name||'')));
+  const options=stores.map(s=>{
+    const sid=String(s.id||'');
+    const code=String(s.store_code||'').trim();
+    const label=code?`${code} · ${String(s.name||sid)}`:String(s.name||sid);
+    const selected=(f.targetStoreIds||[]).includes(sid)?' selected':'';
+    return `<option value="${escapeHtml(sid)}"${selected}>${escapeHtml(label)}</option>`;
+  }).join('');
+  return `
+  <div class="fg">
+    <label class="flabel">Apply changes to</label>
+    <select class="finput" onchange="updateForm('scope',this.value)">
+      <option value="active"${mode==='active'?' selected':''}>This store only (${escapeHtml(ACTIVE_STORE.name)})</option>
+      <option value="all"${mode==='all'?' selected':''}>All stores</option>
+      <option value="selected"${mode==='selected'?' selected':''}>Specific stores</option>
+    </select>
+    <div style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Use this when adding, editing, or deleting items to apply changes across stores.</div>
+  </div>
+  ${mode==='selected'?`<div class="fg">
+    <label class="flabel">Target stores</label>
+    <select class="finput" multiple size="8" onchange="seedScopeMultiChanged(this)">${options}</select>
+    <div style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Hold Ctrl/Cmd to select multiple stores.</div>
+  </div>`:''}`;
+}
+
+async function exportItemSeedTemplate(){
+  const records=S.items.map(i=>({
+    name:i.name||'',
+    cat_l1:i.cat_l1||'',
+    cat_l2:i.cat_l2||'',
+    par:parseFloat(i.par)||1,
+    unit:i.unit||'cs',
+    code:i.code||'',
+    upc:i.upc||'',
+    order_unit:itemOrderUnitLabel(i),
+    order_pack_qty:itemOrderPackQty(i),
+    reorder_trigger:i.reorder_trigger==null?'':i.reorder_trigger,
+    sort_order:parseFloat(i.sort_order)||0
+  }));
+  const payload={
+    exported_at:new Date().toISOString(),
+    store_id:ACTIVE_STORE.id,
+    store_name:ACTIVE_STORE.name,
+    item_count:records.length,
+    items:records
+  };
+  const json=JSON.stringify(payload,null,2);
+  try{
+    await navigator.clipboard.writeText(json);
+    showBanner('Item settings export copied to clipboard.','ok');
+  }catch{
+    const ta=document.createElement('textarea');
+    ta.value=json;
+    document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand('copy'); }catch{}
+    ta.remove();
+    showBanner('Item settings export copied.','ok');
+  }
+}
+
+function normalizeImportedTemplate(text){
+  const parsed=JSON.parse(text);
+  const arr=Array.isArray(parsed)?parsed:(Array.isArray(parsed&&parsed.items)?parsed.items:null);
+  if(!arr||!arr.length) throw new Error('Template must include a non-empty items array.');
+  const out=arr.map((row,ix)=>{
+    const unit=String(row&&row.unit||'').trim()||'cs';
+    const par=parseFloat(row&&row.par);
+    const pack=parseFloat(row&&row.order_pack_qty);
+    const trigRaw=String(row&&row.reorder_trigger??'').trim();
+    const trigNum=parseFloat(trigRaw);
+    return {
+      id:makeEntityId('item'),
+      name:String(row&&row.name||`Item ${ix+1}`),
+      cat_l1:String(row&&row.cat_l1||'Other'),
+      cat_l2:String(row&&row.cat_l2||'General'),
+      par:Number.isFinite(par)&&par>0?par:1,
+      unit,
+      code:String(row&&row.code||''),
+      upc:String(row&&row.upc||''),
+      order_unit:String(row&&row.order_unit||'').trim()||unit,
+      order_pack_qty:Number.isFinite(pack)&&pack>0?pack:1,
+      reorder_trigger:trigRaw===''?null:(Number.isFinite(trigNum)?trigNum:null),
+      sort_order:Number.isFinite(parseFloat(row&&row.sort_order))?parseFloat(row.sort_order):(ix+1)
+    };
+  });
+  return out;
+}
+
+async function importItemSeedTemplate(){
+  if(isAppBusy()) return;
+  const raw=prompt('Paste exported item settings JSON:');
+  if(!raw||!String(raw).trim()) return;
+  let rows=[];
+  try{
+    rows=normalizeImportedTemplate(raw);
+  }catch(e){
+    alert(e&&e.message?e.message:'Invalid JSON template.');
+    return;
+  }
+  if(!confirm(`Import ${rows.length} items into ${ACTIVE_STORE.name}? This replaces the current item list for this store.`)) return;
+  try{
+    setSyncing(true,'Importing item settings…');
+    await db.replaceItemsForStore(ACTIVE_STORE.id, rows);
+    S.items=normalizeItemsForOrderMath(rows);
+    S.draft={};
+    ls.set('items',S.items);
+    markInitialSetupPending({
+      template_store_id:ACTIVE_STORE.id,
+      seed_source:'manual_import_template',
+      item_count:rows.length
+    });
+    startInitialParSetup({keepDraft:false});
+    await db.setGlobalSeedTemplate({
+      source:'manual_import',
+      source_store_id:ACTIVE_STORE.id,
+      template_items:rows.map(itemForTemplateExportShape),
+      updated_by_store_id:ACTIVE_STORE.id
+    });
+    setSyncOk();
+    showBanner(`Imported ${rows.length} items and updated default seed template.`, 'ok');
+    render();
+    queueInitialParFocus();
+  }catch(e){
+    setSyncErr(e.message);
+    render();
+  }
+}
+
+async function useCurrentStoreAsSeedTemplate(){
+  if(!S.items.length){ alert('No items available to use as template.'); return; }
+  if(isAppBusy()) return;
+  try{
+    setSyncing(true,'Saving default seed template…');
+    await db.setGlobalSeedTemplate({
+      source:'store_snapshot',
+      source_store_id:ACTIVE_STORE.id,
+      template_items:S.items.map(itemForTemplateExportShape),
+      updated_by_store_id:ACTIVE_STORE.id
+    });
+    setSyncOk();
+    showBanner(`Default seed template now uses ${ACTIVE_STORE.name}.`,'ok');
+    render();
+  }catch(e){
+    setSyncErr(e.message);
+    render();
+  }
+}
+
+function parseScopeFromForm(){
+  const f=S.formData||{};
+  const mode=normalizeScopeMode(f.scope||'active');
+  if(mode==='all') return {mode:'all',storeIds:[]};
+  if(mode==='selected'){
+    const ids=normalizeStoreIdList(f.targetStoreIds);
+    return {mode:'selected',storeIds:ids};
+  }
+  return {mode:'active',storeIds:[ACTIVE_STORE.id]};
+}
 
 async function saveItem(){
   if(isAppBusy()) return;
   const f=S.formData||{};
   if(!f.name||!f.cat_l1||!f.par){ alert('Name, Category Level 1, and Par Level are required.'); return; }
   const existing=S.formView==='edit'?S.items.find(i=>i.id===S.editItemId):null;
+  const scope=parseScopeFromForm();
+  const targetStoreIds=resolveStoreIdsForScope(scope,S.adminSnapshot);
+  if(!targetStoreIds.length){
+    alert('Select at least one store to apply this item change.');
+    return;
+  }
   const orderPackQtyRaw=parseFloat(f.order_pack_qty);
-  const item={
+  const baseItem={
     id: S.formView==='add'?makeEntityId('item'):S.editItemId,
     name:f.name, cat_l1:f.cat_l1, cat_l2:f.cat_l2||'',
     par:parseFloat(f.par)||1,
@@ -3860,14 +4699,28 @@ async function saveItem(){
     code:f.code||'',
     sort_order: existing!=null&&Number.isFinite(parseFloat(existing.sort_order))?parseFloat(existing.sort_order):S.items.length+1
   };
+  const suffix=S.formView==='edit'
+    ? itemIdSuffix(S.editItemId)
+    : (String(f.seed_key||'').trim()||itemIdSuffix(baseItem.id)||makeEntityId('item').split(':').slice(1).join(':'));
+  const item={...baseItem,id:suffix,seed_key:suffix};
   try{
     setSyncing(true,'Saving item…');
-    await db.upsertItem(item);
-    if(S.formView==='add') S.items.push(item);
-    else { const idx=S.items.findIndex(i=>i.id===item.id); if(idx>=0) S.items[idx]=item; }
-    ls.set('items',S.items);
+    const updatedStoreIds=await db.upsertItemsForScope(scope.mode,targetStoreIds,item,{insertMissing:true});
+    const affectsActive=updatedStoreIds.includes(ACTIVE_STORE.id);
+    if(affectsActive){
+      const scopedId=scopedItemIdForStore(ACTIVE_STORE,item.seed_key);
+      const activeItem={...item,id:scopedId,store_id:ACTIVE_STORE.id};
+      if(S.formView==='add') S.items.push(activeItem);
+      else {
+        const idx=S.items.findIndex(i=>i.id===S.editItemId||i.id===scopedId);
+        if(idx>=0) S.items[idx]=activeItem;
+      }
+      S.items=normalizeItemsForOrderMath(S.items);
+      ls.set('items',S.items);
+    }
     setSyncOk();
     S.formView=null; S.editItemId=null; S.formData=null;
+    showBanner(`Item saved to ${itemSeedScopeLabel(scope.mode)} (${updatedStoreIds.length} store${updatedStoreIds.length===1?'':'s'}).`,'ok');
     render();
   }catch(e){
     setSyncErr(e.message);
@@ -3878,12 +4731,23 @@ async function saveItem(){
 async function deleteItem(id){
   if(!confirm('Delete this item? Historical count data for this item will also be removed.')) return;
   if(isAppBusy()) return;
+  const scope=parseScopeFromForm();
+  const targetStoreIds=resolveStoreIdsForScope(scope,S.adminSnapshot);
+  if(!targetStoreIds.length){
+    alert('Select at least one store to apply this delete.');
+    return;
+  }
   try{
     setSyncing(true,'Deleting item…');
-    await db.deleteItem(id);
-    S.items=S.items.filter(i=>i.id!==id);
-    ls.set('items',S.items);
+    const removedStoreIds=await db.deleteItemForScope(scope.mode,targetStoreIds,id);
+    const affectsActive=removedStoreIds.includes(ACTIVE_STORE.id);
+    if(affectsActive){
+      const activeId=scopedItemIdForStore(ACTIVE_STORE,itemIdSuffix(id));
+      S.items=S.items.filter(i=>i.id!==id&&i.id!==activeId);
+      ls.set('items',S.items);
+    }
     setSyncOk();
+    showBanner(`Item removed from ${itemSeedScopeLabel(scope.mode)} (${removedStoreIds.length} store${removedStoreIds.length===1?'':'s'}).`,'ok');
     render();
   }catch(e){
     setSyncErr(e.message);
@@ -4103,6 +4967,10 @@ function normalizeItemsForOrderMath(items){
 // ─── DATA LOAD ───────────────────────────────────────────────────────────────
 /** Once any inventory session exists, keep the count form unlocked (no start modal). */
 function syncCountFormAvailability(){
+  if(S.initialSetupActive){
+    S.countFormActive=false;
+    return;
+  }
   if(S.sessions&&S.sessions.length>0) S.countFormActive=true;
   else S.countFormActive=false;
 }
@@ -4121,7 +4989,14 @@ async function loadFromDB(){
     const {items,sessions,orders} = await db.loadAll();
     if(!items.length){
       const seeded=await db.seedItems();
-      S.items = normalizeItemsForOrderMath(seeded);
+      S.items = normalizeItemsForOrderMath(seeded.rows||[]);
+      if((seeded.rows||[]).length){
+        markInitialSetupPending({
+          template_store_id:seeded.templateStoreId||null,
+          seed_source:seeded.seedSource,
+          item_count:seeded.rows.length
+        });
+      }
     } else {
       S.items = normalizeItemsForOrderMath(items);
     }
@@ -4142,6 +5017,14 @@ async function loadFromDB(){
       updateFeatureAccessFromSnapshot(null);
     }
     await mergeLayoutFromRemote();
+    const setupStatus=readInitialSetupStatus();
+    if(needsInitialParSetup(setupStatus,S.items)){
+      startInitialParSetup({keepDraft:true});
+    }else{
+      S.initialSetupActive=false;
+      S.initialSetupIndex=0;
+      S.initialSetupParDraft={};
+    }
     setSyncOk();
     syncCountFormAvailability();
   }catch(e){
@@ -4156,6 +5039,14 @@ function loadFromCache(){
   S.sessions = ls.get('sessions')||[];
   S.orders = ls.get('orders')||[];
   updateFeatureAccessFromSnapshot(null);
+  const setupStatus=readInitialSetupStatus();
+  if(needsInitialParSetup(setupStatus,S.items)){
+    startInitialParSetup({keepDraft:true});
+  }else{
+    S.initialSetupActive=false;
+    S.initialSetupIndex=0;
+    S.initialSetupParDraft={};
+  }
   syncCountFormAvailability();
 }
 
