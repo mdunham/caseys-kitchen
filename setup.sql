@@ -9,6 +9,7 @@ create table if not exists ck_items (
   par numeric not null default 1,
   unit text not null default 'cs',
   code text not null default '',
+  upc text not null default '',
   order_unit text not null default '',
   order_pack_qty numeric not null default 1,
   reorder_trigger numeric,
@@ -101,5 +102,7 @@ update ck_counts set updated_at = coalesce(updated_at, created_at) where updated
 alter table ck_items add column if not exists order_unit text default '';
 alter table ck_items add column if not exists order_pack_qty numeric default 1;
 alter table ck_items add column if not exists reorder_trigger numeric;
+alter table ck_items add column if not exists upc text default '';
 update ck_items set order_unit = coalesce(nullif(order_unit,''), unit) where order_unit is null or order_unit = '';
 update ck_items set order_pack_qty = 1 where order_pack_qty is null or order_pack_qty <= 0;
+update ck_items set upc = '' where upc is null;
