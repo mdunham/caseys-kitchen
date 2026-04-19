@@ -292,11 +292,22 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
   <div id="pin-overlay" class="pin-overlay" aria-modal="true" role="dialog" aria-labelledby="pin-title">
     <div class="pin-box">
       <div class="pin-title" id="pin-title">Store access</div>
-      <div class="pin-sub">Enter the 4-digit store PIN to continue.</div>
-      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" autofocus aria-label="PIN" onkeydown="if(event.key==='Enter')submitStorePin()" oninput="onStorePinInput()">
+      <div class="pin-sub">Enter your Casey's store code to continue.</div>
+      <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" autofocus aria-label="Store code" onkeydown="if(event.key==='Enter')submitStorePin()" oninput="onStorePinInput()">
       <div id="pin-err" class="pin-err" role="alert"></div>
       <div class="pin-actions">
-        <button type="button" class="btn btn-primary" style="width:100%" onclick="submitStorePin()">Unlock</button>
+        <button type="button" class="btn btn-primary" style="width:100%" onclick="submitStorePin()">Continue</button>
+        <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="toggleStoreSignup(true)">Sign up new store</button>
+      </div>
+      <div id="signup-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6">
+        <div class="pin-sub" style="margin-bottom:10px">Create a new store using your Casey's store code.</div>
+        <input id="signup-store-name" class="finput" type="text" placeholder="Store name (e.g. Casey's #2511)" aria-label="Store name" style="margin-bottom:8px">
+        <input id="signup-store-code" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="Store code" aria-label="Store code" oninput="onSignupStoreCodeInput()">
+        <div id="signup-err" class="pin-err" role="alert"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" style="flex:1;min-width:120px" onclick="signupStore()">Create Store</button>
+          <button type="button" class="btn btn-secondary" style="flex:1;min-width:120px" onclick="toggleStoreSignup(false)">Cancel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -353,22 +364,129 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 const SB_URL = 'https://lzhawmvgkylumwcseltb.supabase.co';
 const SB_KEY = 'sb_publishable_lVS5Yjtzu_t6c9LKDYTuLA_vGWL_gcC';
 
-/** Store PIN (four-digit access) — session only, not persisted across browser restarts */
-const STORE_PIN = '1406';
-const SS_PIN_KEY = 'ck2_store1406';
+/**
+ * Store context groundwork for multi-store support.
+ * This release still defaults to one known store, but all persistence paths are now scoped.
+ */
+const STORE_DIRECTORY = Object.freeze([
+  {id:'store_1406',slug:'store1406',name:'Store 1406',pin:'1406'}
+]);
+const ACTIVE_STORE_CTX_KEY = 'ck2_active_store_ctx';
+let ACTIVE_STORE = STORE_DIRECTORY[0];
+let STORE_PIN = ACTIVE_STORE.pin;
+let SS_PIN_KEY = `ck2_pin_${ACTIVE_STORE.slug}`;
+let LS_PREFIX = `ck2_${ACTIVE_STORE.slug}_`;
+let STORE_LAYOUT_ROW_ID = `layout:${ACTIVE_STORE.id}`;
+const LEGACY_LAYOUT_ROW_ID = 'global';
+const DEFAULT_TRIAL_DAYS = 45;
+const ADMIN_PIN = '9090';
+const SS_ADMIN_KEY = 'ck2_admin_authed';
 
 const SEED_ITEMS = [
-  {id:'s1',name:'Hot Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1001',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:1},
-  {id:'s2',name:'Mild Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1002',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:2},
-  {id:'s3',name:'Pepperoni',cat_l1:'Freezer',cat_l2:'Meats',par:4,unit:'cs',code:'CSY1003',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:3},
-  {id:'s4',name:'Large Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1010',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:4},
-  {id:'s5',name:'Small Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1011',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:5},
-  {id:'s6',name:'Large Original',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:3,unit:'cs',code:'CSY1012',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:6},
-  {id:'s7',name:'Provolone',cat_l1:'Cooler',cat_l2:'Cheese',par:5,unit:'bags',code:'CSY2001',order_unit:'bags',order_pack_qty:1,reorder_trigger:null,sort_order:7},
-  {id:'s8',name:'Mozzarella',cat_l1:'Cooler',cat_l2:'Cheese',par:4,unit:'bags',code:'CSY2002',order_unit:'bags',order_pack_qty:1,reorder_trigger:null,sort_order:8},
-  {id:'s9',name:'Pizza Sauce',cat_l1:'Dry',cat_l2:'Sauces',par:6,unit:'cans',code:'CSY3001',order_unit:'cans',order_pack_qty:1,reorder_trigger:null,sort_order:9},
-  {id:'s10',name:'Ranch Cups',cat_l1:'Dry',cat_l2:'Condiments',par:8,unit:'cs',code:'CSY3010',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:10},
+  {id:'s1',name:'Hot Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1001',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:1},
+  {id:'s2',name:'Mild Sausage',cat_l1:'Freezer',cat_l2:'Meats',par:3,unit:'cs',code:'CSY1002',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:2},
+  {id:'s3',name:'Pepperoni',cat_l1:'Freezer',cat_l2:'Meats',par:4,unit:'cs',code:'CSY1003',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:3},
+  {id:'s4',name:'Large Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1010',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:4},
+  {id:'s5',name:'Small Thin Crust',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:2,unit:'cs',code:'CSY1011',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:5},
+  {id:'s6',name:'Large Original',cat_l1:'Freezer',cat_l2:'Pizza Dough',par:3,unit:'cs',code:'CSY1012',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:6},
+  {id:'s7',name:'Provolone',cat_l1:'Cooler',cat_l2:'Cheese',par:5,unit:'bags',code:'CSY2001',upc:'',order_unit:'bags',order_pack_qty:1,reorder_trigger:null,sort_order:7},
+  {id:'s8',name:'Mozzarella',cat_l1:'Cooler',cat_l2:'Cheese',par:4,unit:'bags',code:'CSY2002',upc:'',order_unit:'bags',order_pack_qty:1,reorder_trigger:null,sort_order:8},
+  {id:'s9',name:'Pizza Sauce',cat_l1:'Dry',cat_l2:'Sauces',par:6,unit:'cans',code:'CSY3001',upc:'',order_unit:'cans',order_pack_qty:1,reorder_trigger:null,sort_order:9},
+  {id:'s10',name:'Ranch Cups',cat_l1:'Dry',cat_l2:'Condiments',par:8,unit:'cs',code:'CSY3010',upc:'',order_unit:'cs',order_pack_qty:1,reorder_trigger:null,sort_order:10},
 ];
+
+function scopedSeedItems(){
+  return SEED_ITEMS.map(item=>{
+    const rawId=String(item.id||'').trim();
+    const scopedId=rawId.startsWith(ACTIVE_STORE.slug+':')?rawId:`${ACTIVE_STORE.slug}:${rawId}`;
+    return {...item,id:scopedId,store_id:ACTIVE_STORE.id};
+  });
+}
+
+function makeEntityId(kind){
+  const prefix=`${ACTIVE_STORE.slug}:${kind}:`;
+  try{
+    if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function'){
+      return prefix+crypto.randomUUID();
+    }
+  }catch{}
+  return prefix+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+}
+
+function itemScanCode(item){
+  const upc=String(item?.upc||'').trim();
+  if(upc) return upc;
+  return String(item?.code||'').trim();
+}
+
+function itemCodeMeta(item){
+  const upc=String(item?.upc||'').trim();
+  const ord=String(item?.code||'').trim();
+  if(upc&&ord) return `UPC ${upc} · Order ${ord}`;
+  if(upc) return `UPC ${upc}`;
+  if(ord) return `Order ${ord}`;
+  return '';
+}
+
+function itemScanMeta(item){
+  return itemCodeMeta(item);
+}
+
+function normalizeStoreCode(raw){
+  return String(raw??'').replace(/\D/g,'').slice(0,8);
+}
+
+function normalizeStoreSlug(raw, code){
+  const candidate=String(raw??'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+  if(candidate) return candidate;
+  return `store-${code}`;
+}
+
+function normalizeStoreCtx(raw){
+  if(!raw||typeof raw!=='object') return null;
+  const code=normalizeStoreCode(raw.store_code??raw.pin_code??raw.pin);
+  if(!code) return null;
+  const id=String(raw.id||`store_${code}`).trim()||`store_${code}`;
+  const slug=normalizeStoreSlug(raw.slug,code);
+  const name=String(raw.name||`Store ${code}`).trim()||`Store ${code}`;
+  return {
+    id,
+    slug,
+    name,
+    pin: code,
+    store_code: code
+  };
+}
+
+function applyActiveStore(store, opts={}){
+  const ctx=normalizeStoreCtx(store);
+  if(!ctx) return false;
+  ACTIVE_STORE=ctx;
+  STORE_PIN=ctx.pin;
+  SS_PIN_KEY=`ck2_pin_${ctx.slug}`;
+  LS_PREFIX=`ck2_${ctx.slug}_`;
+  STORE_LAYOUT_ROW_ID=`layout:${ctx.id}`;
+  if(opts.persist!==false){
+    try{ localStorage.setItem(ACTIVE_STORE_CTX_KEY,JSON.stringify(ctx)); }catch{}
+    try{ sessionStorage.setItem(ACTIVE_STORE_CTX_KEY,JSON.stringify(ctx)); }catch{}
+  }
+  return true;
+}
+
+function restoreActiveStoreContext(){
+  let parsed=null;
+  try{
+    const ss=sessionStorage.getItem(ACTIVE_STORE_CTX_KEY);
+    if(ss) parsed=JSON.parse(ss);
+  }catch{}
+  if(!parsed){
+    try{
+      const lsRaw=localStorage.getItem(ACTIVE_STORE_CTX_KEY);
+      if(lsRaw) parsed=JSON.parse(lsRaw);
+    }catch{}
+  }
+  if(parsed) applyActiveStore(parsed,{persist:false});
+}
 
 // ─── SUPABASE ───────────────────────────────────────────────────────────────
 let sb = null;
@@ -384,6 +502,13 @@ const S = {
   editDraft: {},
   formView: null, formData: null, editItemId: null,
   syncing: false, syncError: null, dbReady: false,
+  dbSupportsStoreScope: false,
+  dbSupportsBilling: false,
+  billingCtx: null,
+  featureAccess: {count:true,ordering:true,receive:true,usage:true,source:'legacy'},
+  adminAuthed: false,
+  adminSnapshot: null,
+  adminError: null,
   progressMessage: null,
   progressOnly: false,
   installPrompt: null,
@@ -410,10 +535,25 @@ const S = {
   barcodeMode: 'qr',
 };
 
+function attachStoreScope(row){
+  const next={...row};
+  if(S.dbSupportsStoreScope){
+    next.store_id=ACTIVE_STORE.id;
+  }else if(Object.prototype.hasOwnProperty.call(next,'store_id')){
+    delete next.store_id;
+  }
+  return next;
+}
+
+function scopeByStore(query){
+  if(!S.dbSupportsStoreScope) return query;
+  return query.eq('store_id',ACTIVE_STORE.id);
+}
+
 // ─── LOCALSTORAGE CACHE ─────────────────────────────────────────────────────
 const ls = {
-  get(k){ try{ const v=localStorage.getItem('ck2_'+k); return v?JSON.parse(v):null; }catch{ return null; }},
-  set(k,v){ try{ localStorage.setItem('ck2_'+k,JSON.stringify(v)); }catch{} }
+  get(k){ try{ const v=localStorage.getItem(LS_PREFIX+k); return v?JSON.parse(v):null; }catch{ return null; }},
+  set(k,v){ try{ localStorage.setItem(LS_PREFIX+k,JSON.stringify(v)); }catch{} }
 };
 
 const BARCODE_MODE_OPTS={
@@ -446,7 +586,24 @@ const db = {
     if(!sb) return false;
     try{
       const {error} = await sb.from('ck_items').select('id').limit(1);
-      return !error;
+      if(error){
+        S.dbSupportsStoreScope=false;
+        S.dbSupportsBilling=false;
+        return false;
+      }
+      try{
+        const {error:storeScopeErr} = await sb.from('ck_items').select('store_id').limit(1);
+        S.dbSupportsStoreScope=!storeScopeErr;
+      }catch{
+        S.dbSupportsStoreScope=false;
+      }
+      try{
+        const {error:billingErr} = await sb.from('ck_stores').select('id').limit(1);
+        S.dbSupportsBilling=!billingErr;
+      }catch{
+        S.dbSupportsBilling=false;
+      }
+      return true;
     }catch{ return false; }
   },
 
@@ -455,28 +612,38 @@ const db = {
     const CK=window.__CK_LOGIC;
     if(!CK) throw new Error('App logic not loaded');
     // Load items
-    const {data:items,error:ie} = await sb.from('ck_items').select('*').order('sort_order');
+    let itemsQuery=sb.from('ck_items').select('*');
+    itemsQuery=scopeByStore(itemsQuery);
+    const {data:items,error:ie} = await itemsQuery.order('sort_order');
     if(ie) throw ie;
     // Bounded history: avoids loading years of ck_counts / ck_order_items into RAM + localStorage.
     const capS=CK.LOAD_CAP_SESSIONS;
     const capO=CK.LOAD_CAP_ORDERS;
-    const {data:sessions,error:se} = await sb.from('ck_sessions').select('*').order('counted_at',{ascending:false}).limit(capS);
+    let sessionsQuery=sb.from('ck_sessions').select('*');
+    sessionsQuery=scopeByStore(sessionsQuery);
+    const {data:sessions,error:se} = await sessionsQuery.order('counted_at',{ascending:false}).limit(capS);
     if(se) throw se;
     const sessArr=sessions||[];
     const sessionIds=sessArr.map(s=>s.id);
     let counts=[];
     if(sessionIds.length){
-      const {data:ce,error:ceErr}=await sb.from('ck_counts').select('*').in('session_id',sessionIds);
+      let countsQuery=sb.from('ck_counts').select('*').in('session_id',sessionIds);
+      countsQuery=scopeByStore(countsQuery);
+      const {data:ce,error:ceErr}=await countsQuery;
       if(ceErr) throw ceErr;
       counts=ce||[];
     }
-    const {data:orders,error:oe} = await sb.from('ck_orders').select('*').order('ordered_at',{ascending:false}).limit(capO);
+    let ordersQuery=sb.from('ck_orders').select('*');
+    ordersQuery=scopeByStore(ordersQuery);
+    const {data:orders,error:oe} = await ordersQuery.order('ordered_at',{ascending:false}).limit(capO);
     if(oe) throw oe;
     const ordArr=orders||[];
     const orderIds=ordArr.map(o=>o.id);
     let oitems=[];
     if(orderIds.length){
-      const {data:oie,error:oieErr}=await sb.from('ck_order_items').select('*').in('order_id',orderIds);
+      let orderItemsQuery=sb.from('ck_order_items').select('*').in('order_id',orderIds);
+      orderItemsQuery=scopeByStore(orderItemsQuery);
+      const {data:oie,error:oieErr}=await orderItemsQuery;
       if(oieErr) throw oieErr;
       oitems=oie||[];
     }
@@ -488,25 +655,31 @@ const db = {
   },
 
   async seedItems(){
-    const {error} = await sb.from('ck_items').upsert(SEED_ITEMS,{onConflict:'id'});
+    const rows=scopedSeedItems().map(attachStoreScope);
+    const {error} = await sb.from('ck_items').upsert(rows,{onConflict:'id'});
     if(error) throw error;
+    return rows;
   },
 
   async upsertItem(item){
-    const {error} = await sb.from('ck_items').upsert({...item,updated_at:new Date().toISOString()},{onConflict:'id'});
+    const payload=attachStoreScope({...item,updated_at:new Date().toISOString()});
+    const {error} = await sb.from('ck_items').upsert(payload,{onConflict:'id'});
     if(error) throw error;
   },
 
   async deleteItem(id){
-    const {error} = await sb.from('ck_items').delete().eq('id',id);
+    let q=sb.from('ck_items').delete().eq('id',id);
+    q=scopeByStore(q);
+    const {error} = await q;
     if(error) throw error;
   },
 
   async saveSession(sessionId, countedAt, counts){
-    const {error:se} = await sb.from('ck_sessions').upsert({id:sessionId,counted_at:countedAt},{onConflict:'id'});
+    const row=attachStoreScope({id:sessionId,counted_at:countedAt});
+    const {error:se} = await sb.from('ck_sessions').upsert(row,{onConflict:'id'});
     if(se) throw se;
     const ts = new Date().toISOString();
-    const rows = Object.entries(counts).map(([item_id,count])=>({
+    const rows = Object.entries(counts).map(([item_id,count])=>attachStoreScope({
       session_id:sessionId, item_id, count:parseFloat(count)||0, updated_at: ts
     }));
     if(rows.length){
@@ -517,7 +690,7 @@ const db = {
 
   async updateSessionCounts(sessionId, counts){
     const ts = new Date().toISOString();
-    const rows = Object.entries(counts).map(([item_id,count])=>({
+    const rows = Object.entries(counts).map(([item_id,count])=>attachStoreScope({
       session_id:sessionId, item_id, count:parseFloat(count)||0, updated_at: ts
     }));
     const {error} = await sb.from('ck_counts').upsert(rows,{onConflict:'session_id,item_id'});
@@ -525,20 +698,23 @@ const db = {
   },
 
   async deleteSession(sessionId){
-    const {error} = await sb.from('ck_sessions').delete().eq('id',sessionId);
+    let q=sb.from('ck_sessions').delete().eq('id',sessionId);
+    q=scopeByStore(q);
+    const {error} = await q;
     if(error) throw error;
   },
 
   async saveOrder(orderId, orderedAt, sessionId, items){
-    const {error:oe} = await sb.from('ck_orders').insert({id:orderId,ordered_at:orderedAt,session_id:sessionId,status:'pending'});
+    const ord=attachStoreScope({id:orderId,ordered_at:orderedAt,session_id:sessionId,status:'pending'});
+    const {error:oe} = await sb.from('ck_orders').insert(ord);
     if(oe) throw oe;
     const rows = Object.entries(items).map(([item_id,data])=>{
       const r=parseFloat(data&&data.recommended);
-      return {
+      return attachStoreScope({
         order_id:orderId, item_id,
         recommended:Number.isFinite(r)?r:0,
         received:null
-      };
+      });
     });
     if(rows.length){
       const {error:oie} = await sb.from('ck_order_items').insert(rows);
@@ -547,13 +723,17 @@ const db = {
   },
 
   async deleteOrder(orderId){
-    const {error} = await sb.from('ck_orders').delete().eq('id',orderId);
+    let q=sb.from('ck_orders').delete().eq('id',orderId);
+    q=scopeByStore(q);
+    const {error} = await q;
     if(error) throw error;
   },
 
   async confirmReceipt(orderId, receivedMap, lineItems){
     const receivedAt=new Date().toISOString();
-    const {error:oe} = await sb.from('ck_orders').update({status:'received',received_at:receivedAt}).eq('id',orderId);
+    let oq=sb.from('ck_orders').update({status:'received',received_at:receivedAt}).eq('id',orderId);
+    oq=scopeByStore(oq);
+    const {error:oe} = await oq;
     if(oe) throw oe;
     const lines=lineItems&&typeof lineItems==='object'?lineItems:{};
     const entries=Object.entries(lines);
@@ -566,7 +746,7 @@ const db = {
       const rec=parseFloat(data&&data.recommended);
       const recommended=Number.isFinite(rec)?rec:0;
       const {error}=await sb.from('ck_order_items').upsert(
-        {order_id:orderId,item_id,recommended,received},
+        attachStoreScope({order_id:orderId,item_id,recommended,received}),
         {onConflict:'order_id,item_id'}
       );
       if(error) throw error;
@@ -574,18 +754,26 @@ const db = {
   },
 
   async loadLayoutRow(){
-    const {data,error} = await sb.from('ck_layout').select('layout,updated_at').eq('id','global').maybeSingle();
+    let primary=sb.from('ck_layout').select('layout,updated_at,id').eq('id',STORE_LAYOUT_ROW_ID);
+    primary=scopeByStore(primary);
+    const {data,error} = await primary.maybeSingle();
     if(error) throw error;
-    return data;
+    if(data) return data;
+    let fallback=sb.from('ck_layout').select('layout,updated_at,id').eq('id',LEGACY_LAYOUT_ROW_ID);
+    fallback=scopeByStore(fallback);
+    const {data:legacy,error:legacyErr}=await fallback.maybeSingle();
+    if(legacyErr) throw legacyErr;
+    return legacy;
   },
 
   async upsertLayout(L){
     const layout={catOrder:L.catOrder||[],subOrder:L.subOrder||{},groupItemOrder:L.groupItemOrder||{}};
-    const {data,error} = await sb.from('ck_layout').upsert({
-      id:'global',
+    const row=attachStoreScope({
+      id:STORE_LAYOUT_ROW_ID,
       layout,
       updated_at:new Date().toISOString()
-    },{onConflict:'id'}).select('updated_at').maybeSingle();
+    });
+    const {data,error} = await sb.from('ck_layout').upsert(row,{onConflict:'id'}).select('updated_at').maybeSingle();
     if(error) throw error;
     return data&&data.updated_at ? new Date(data.updated_at).getTime() : null;
   }
@@ -660,6 +848,33 @@ function isStoreAuthed(){
   try{ return sessionStorage.getItem(SS_PIN_KEY)==='1'; }catch{ return false; }
 }
 
+function hidePinOverlay(){
+  const overlay=document.getElementById('pin-overlay');
+  if(overlay) overlay.style.display='none';
+}
+
+function clearPinErrors(){
+  const errEl=document.getElementById('pin-err');
+  const signupErr=document.getElementById('signup-err');
+  if(errEl) errEl.textContent='';
+  if(signupErr) signupErr.textContent='';
+}
+
+function toggleStoreSignup(open){
+  const wrap=document.getElementById('signup-wrap');
+  if(!wrap) return;
+  wrap.style.display=open?'block':'none';
+  clearPinErrors();
+  if(open){
+    const nameEl=document.getElementById('signup-store-name');
+    if(nameEl) nameEl.focus();
+  }else{
+    const codeEl=document.getElementById('signup-store-code');
+    if(codeEl) codeEl.value='';
+    focusStorePinInput();
+  }
+}
+
 function focusStorePinInput(){
   const input=document.getElementById('pin-input');
   if(!input) return;
@@ -677,15 +892,129 @@ function focusStorePinInput(){
 function onStorePinInput(){
   const input=document.getElementById('pin-input');
   if(!input) return;
-  const v=String(input.value||'').replace(/\D/g,'');
-  if(v.length===4) submitStorePin();
+  const v=normalizeStoreCode(input.value||'');
+  input.value=v;
+}
+
+function onSignupStoreCodeInput(){
+  const input=document.getElementById('signup-store-code');
+  if(!input) return;
+  input.value=normalizeStoreCode(input.value||'');
+}
+
+async function fetchStoreByCode(storeCode){
+  if(!sb) return null;
+  const code=normalizeStoreCode(storeCode);
+  if(!code) return null;
+  try{
+    const {data,error}=await sb.from('ck_stores').select('*').eq('store_code',code).maybeSingle();
+    if(error) return null;
+    return normalizeStoreCtx(data);
+  }catch{
+    return null;
+  }
+}
+
+async function signupStore(){
+  const nameEl=document.getElementById('signup-store-name');
+  const codeEl=document.getElementById('signup-store-code');
+  const errEl=document.getElementById('signup-err');
+  const rawName=(nameEl&&nameEl.value)||'';
+  const rawCode=(codeEl&&codeEl.value)||'';
+  const storeName=String(rawName).trim();
+  const storeCode=normalizeStoreCode(rawCode);
+  if(!storeName){
+    if(errEl) errEl.textContent='Store name is required.';
+    return;
+  }
+  if(storeCode.length<4){
+    if(errEl) errEl.textContent='Store code must be at least 4 digits.';
+    return;
+  }
+  if(!sb){
+    if(errEl) errEl.textContent='Database unavailable. Try again after reconnecting.';
+    return;
+  }
+  if(errEl) errEl.textContent='';
+  const slug=normalizeStoreSlug(storeName,storeCode);
+  const storeId=`store_${storeCode}`;
+  const nowIso=new Date().toISOString();
+  try{
+    const existing=await fetchStoreByCode(storeCode);
+    if(existing){
+      applyActiveStore(existing);
+    }else{
+      const storeRow={
+        id:storeId,
+        slug,
+        name:storeName,
+        store_code:storeCode,
+        pin_code:storeCode,
+        trial_days:DEFAULT_TRIAL_DAYS
+      };
+      const acctId=`acct_${storeCode}`;
+      const acctRow={
+        id:acctId,
+        name:storeName,
+        owner_email:null,
+        status:'active'
+      };
+      const subRow={
+        account_id:acctId,
+        store_id:storeId,
+        plan_code:'ordering_usage',
+        status:'trialing',
+        trial_started_at:nowIso,
+        trial_ends_at:new Date(Date.now()+DEFAULT_TRIAL_DAYS*24*60*60*1000).toISOString()
+      };
+      const {error:acctErr}=await sb.from('ck_accounts').upsert(acctRow,{onConflict:'id'});
+      if(acctErr) throw acctErr;
+      const {error:storeErr}=await sb.from('ck_stores').upsert(storeRow,{onConflict:'id'});
+      if(storeErr) throw storeErr;
+      const {error:linkErr}=await sb.from('ck_account_stores').upsert({
+        account_id:acctId,
+        store_id:storeId,
+        role:'owner',
+        created_at:nowIso
+      },{onConflict:'account_id,store_id'});
+      if(linkErr) throw linkErr;
+      const {error:subErr}=await sb.from('ck_subscriptions').upsert(subRow,{onConflict:'account_id,store_id,plan_code'});
+      if(subErr) throw subErr;
+      applyActiveStore(normalizeStoreCtx(storeRow));
+    }
+    try{ sessionStorage.setItem(SS_PIN_KEY,'1'); }catch{}
+    hidePinOverlay();
+    const ov=document.getElementById('loading-overlay');
+    const lm=document.getElementById('loading-msg');
+    if(ov) ov.style.display='flex';
+    if(lm) lm.textContent='Setting up store…';
+    await finishBoot();
+  }catch(e){
+    if(errEl) errEl.textContent=e&&e.message?e.message:'Unable to create store right now.';
+  }finally{
+    const ov=document.getElementById('loading-overlay');
+    if(ov) ov.style.display='none';
+  }
 }
 
 async function submitStorePin(){
   const input=document.getElementById('pin-input');
   const errEl=document.getElementById('pin-err');
   const raw=(input&&input.value)||'';
-  const v=raw.replace(/\D/g,'');
+  const v=normalizeStoreCode(raw);
+  if(input) input.value=v;
+  if(v.length<4){
+    if(errEl) errEl.textContent='Enter your Casey\'s store code.';
+    return;
+  }
+  const store=await fetchStoreByCode(v);
+  if(!store){
+    if(errEl) errEl.textContent='Store not found. Use "Sign up new store".';
+    if(input) input.value='';
+    focusStorePinInput();
+    return;
+  }
+  applyActiveStore(store);
   if(v!==STORE_PIN){
     if(errEl) errEl.textContent='Incorrect PIN.';
     if(input) input.value='';
@@ -694,15 +1023,15 @@ async function submitStorePin(){
   }
   if(errEl) errEl.textContent='';
   try{ sessionStorage.setItem(SS_PIN_KEY,'1'); }catch{}
-  document.getElementById('pin-overlay').style.display='none';
+  hidePinOverlay();
   const ov=document.getElementById('loading-overlay');
   const lm=document.getElementById('loading-msg');
-  ov.style.display='flex';
-  lm.textContent='Connecting to database…';
+  if(ov) ov.style.display='flex';
+  if(lm) lm.textContent='Connecting to database…';
   try{
     await finishBoot();
   }finally{
-    ov.style.display='none';
+    if(ov) ov.style.display='none';
   }
 }
 
@@ -736,6 +1065,11 @@ function fmtCountdown(ms){
 function fmtDate(iso){ return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
 function fmtTime(iso){ return new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
 function fmtDateTime(iso){ return new Date(iso).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+
+function fmtMoneyCents(cents){
+  const n=Number(cents)||0;
+  return '$'+(n/100).toFixed(2);
+}
 
 function escapeHtml(s){
   return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -808,10 +1142,10 @@ function layoutHasCustomOrder(L){
 }
 
 function layoutPushMsGet(){
-  try{ return parseInt(localStorage.getItem('ck2_layoutPushMs')||'0',10)||0; }catch{ return 0; }
+  try{ return parseInt(localStorage.getItem(LS_PREFIX+'layoutPushMs')||'0',10)||0; }catch{ return 0; }
 }
 function layoutPushMsSet(ms){
-  try{ localStorage.setItem('ck2_layoutPushMs',String(ms)); }catch{}
+  try{ localStorage.setItem(LS_PREFIX+'layoutPushMs',String(ms)); }catch{}
 }
 
 async function mergeLayoutFromRemote(){
@@ -1522,7 +1856,7 @@ function renderCount(){
       <div class="card walk-card">
         <div class="walk-breadcrumb">${escapeHtml(l1)} › ${escapeHtml(l2)}</div>
         <div class="walk-name">${escapeHtml(item.name)}</div>
-        <div class="walk-meta">Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
+        <div class="walk-meta">Par <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(itemScanMeta(item))}</span></div>
         <div class="walk-qty-strip">
           <button type="button" class="walk-float-btn walk-float-prev" onclick="walkGo(-1)" aria-label="Previous item"${S.walkIndex<=0?' disabled':''}><span class="walk-float-icon" aria-hidden="true">‹</span><span class="walk-float-lbl">Prev</span></button>
           <div class="walk-qty-center">
@@ -1582,7 +1916,7 @@ function renderCount(){
             h+=`<div class="item-row count-item-row">
               <div>
                 <div class="item-name">${escapeHtml(item.name)}</div>
-                <div class="item-meta">Par: <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(item.code)}</span></div>
+                <div class="item-meta">Par: <b style="color:var(--ck-red)">${item.par}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(itemScanMeta(item))}</span></div>
               </div>
               <div style="display:flex;align-items:center">
                 <input class="qinput" type="number" min="0" step="0.5" id="cq-${item.id}" value="${val}" placeholder="0" oninput="setDraft('${item.id}',this.value)" onkeydown="countListQtyKeydown(event,'${item.id}')">
@@ -1864,7 +2198,7 @@ function renderOrder(){
     <div class="card walk-card ord-card${ack?' ord-acked':''}">
       <div class="walk-breadcrumb">${escapeHtml(item.cat_l1)} › ${escapeHtml(item.cat_l2)}</div>
       <div class="walk-name">${escapeHtml(item.name)}</div>
-      <div class="walk-meta">On hand <b>${fmtQty(item.onHandCountUnit??item.onHand)}</b> ${escapeHtml(item.unit)} · Par <b style="color:var(--ck-red)">${fmtQty(item.parCountUnit??item.par)}</b> ${escapeHtml(item.unit)} · ${escapeHtml(triggerMetaLabel(item))}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b> ${escapeHtml(itemOrderUnitLabel(item))}`:''} · <span class="mono">${escapeHtml(item.code)}</span></div>
+      <div class="walk-meta">On hand <b>${fmtQty(item.onHandCountUnit??item.onHand)}</b> ${escapeHtml(item.unit)} · Par <b style="color:var(--ck-red)">${fmtQty(item.parCountUnit??item.par)}</b> ${escapeHtml(item.unit)} · ${escapeHtml(triggerMetaLabel(item))}${item.orderBonus!==0?` · Manual <b>${fmtManualAdj(item.orderBonus)}</b> ${escapeHtml(itemOrderUnitLabel(item))}`:''} · <span class="mono">${escapeHtml(itemScanMeta(item))}</span></div>
       <div class="order-list-bc-row order-walk-bcs-row">
         <div class="order-list-bc-bar"><div id="bc-${item.id}"><span style="font-size:11px;color:#9ca3af">Generating code…</span></div></div>
         <div class="order-list-bc-qty">
@@ -1947,8 +2281,8 @@ function drawBarcodes(){
   const orderItems=orderTabLineItems();
   for(const item of orderItems){
     const wrap=document.getElementById('bc-'+item.id);
-    if(!wrap||!item.code) continue;
-    const code=String(item.code).trim();
+    const code=itemScanCode(item);
+    if(!wrap||!code) continue;
     wrap.innerHTML='';
     if(mode==='barcode'){
       if(!BCTor){
@@ -2256,7 +2590,8 @@ function renderSetup(){
       ${fg('Order Unit','order_unit',f.order_unit||f.unit||'cs','text','e.g. cases, each')}
       ${fg('Counted units per ordered unit','order_pack_qty',f.order_pack_qty||'1','number','e.g. 8 for 8 boxes per case')}
       ${fg('Reorder trigger (count units)','reorder_trigger',f.reorder_trigger==null?'':f.reorder_trigger,'number','Order only when on hand is <= this value (leave blank for none)')}
-      ${fg('Item code (QR)','code',f.code||'','text','e.g. CSY1001')}
+      ${fg('UPC (scanner barcode)','upc',f.upc||'','text','e.g. 012345678905')}
+      ${fg('Order code (legacy/internal)','code',f.code||'','text','e.g. CSY1001')}
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn btn-primary" onclick="saveItem()">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
@@ -2331,19 +2666,19 @@ function renderSetup(){
         </div>`;
       s.items.forEach(item=>{
         const editingCode=S.setupCodeEditId===item.id;
-        const codeLabel=String(item.code||'').trim()||'No code';
+        const codeLabel=String(item.upc||'').trim()||'No UPC';
         const ordUnit=itemOrderUnitLabel(item);
         const packQty=itemOrderPackQty(item);
         const trigLabel=fmtTriggerLabel(item);
         const codeDisplay=editingCode
           ? `<span class="setup-code-edit">
-              <input id="setup-code-input-${item.id}" class="setup-code-input" type="text" value="${escapeHtml(S.setupCodeDraft)}" aria-label="Order code for ${escapeHtml(item.name)}" oninput="setQuickEditItemCodeDraft(this.value)" onkeydown="quickEditItemCodeKeydown(event,'${item.id}')" onblur="quickEditItemCodeBlur(event,'${item.id}')">
+              <input id="setup-code-input-${item.id}" class="setup-code-input" type="text" value="${escapeHtml(S.setupCodeDraft)}" aria-label="UPC for ${escapeHtml(item.name)}" oninput="setQuickEditItemCodeDraft(this.value)" onkeydown="quickEditItemCodeKeydown(event,'${item.id}')" onblur="quickEditItemCodeBlur(event,'${item.id}')">
               <span class="setup-code-actions">
                 <button type="button" class="setup-code-btn save" onclick="commitQuickEditItemCode('${item.id}')" ${S.setupCodeSavingId===item.id?'disabled':''}>Save</button>
                 <button type="button" class="setup-code-btn cancel" onclick="cancelQuickEditItemCode()" ${S.setupCodeSavingId===item.id?'disabled':''}>Cancel</button>
               </span>
             </span>`
-          : `<span class="setup-code-chip mono" role="button" tabindex="0" title="Double-click or double-tap to edit order code"
+          : `<span class="setup-code-chip mono" role="button" tabindex="0" title="Double-click or double-tap to edit UPC"
                onclick="handleQuickEditItemCodeTap(event,'${item.id}')"
                ondblclick="startQuickEditItemCode('${item.id}')"
                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();startQuickEditItemCode('${item.id}')}">${escapeHtml(codeLabel)}</span>`;
@@ -2354,7 +2689,7 @@ function renderSetup(){
           </div>
           <div style="flex:1;min-width:0">
             <div class="item-name">${escapeHtml(item.name)}</div>
-            <div class="item-meta">Par: ${fmtQty(item.par)} ${escapeHtml(item.unit)} · Order: ${escapeHtml(ordUnit)}${packQty!==1?`<span class="setup-ord-badge">x${fmtQty(packQty)}</span>`:''} · ${escapeHtml(triggerMetaLabel(item))} · ${codeDisplay}</div>
+            <div class="item-meta">Par: ${fmtQty(item.par)} ${escapeHtml(item.unit)} · Order: ${escapeHtml(ordUnit)}${packQty!==1?`<span class="setup-ord-badge">x${fmtQty(packQty)}</span>`:''} · ${escapeHtml(triggerMetaLabel(item))} · ${codeDisplay}${item.code?` <span class="mono">Order ${escapeHtml(item.code)}</span>`:''}</div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0">
             <button class="btn btn-secondary btn-sm" onclick="startEdit('${item.id}')">
@@ -2545,7 +2880,7 @@ async function deleteSession(sessionId){
 
 async function completeInventory(){
   if(isAppBusy()) return;
-  const id = Date.now().toString();
+  const id = makeEntityId('sess');
   const countedAt = new Date().toISOString();
   const counts = {};
   S.items.forEach(i=>{ counts[i.id]=parseFloat(S.draft[i.id])||0; });
@@ -2590,7 +2925,7 @@ async function logOrder(){
   if(!allScanned){
     if(!confirm('Not all recommended items have been marked scanned. Do you still wish to save the order?')) return;
   }
-  const id = Date.now().toString();
+  const id = makeEntityId('ord');
   const orderedAt = new Date().toISOString();
   const sessionId = S.sessions[0]?.id;
   const items = {};
@@ -2681,7 +3016,7 @@ function startQuickEditItemCode(id){
   const item=S.items.find(i=>i.id===id);
   if(!item||isAppBusy()) return;
   S.setupCodeEditId=id;
-  S.setupCodeDraft=String(item.code||'');
+  S.setupCodeDraft=String(item.upc||'');
   S.setupCodeSavingId=null;
   render();
   focusSetupCodeInput(id);
@@ -2722,23 +3057,23 @@ async function commitQuickEditItemCode(id){
   if(idx<0){ clearQuickEditItemCode(); render(); return; }
   const item=S.items[idx];
   const nextCode=String(S.setupCodeDraft||'').trim();
-  const currentCode=String(item.code||'').trim();
+  const currentCode=String(item.upc||'').trim();
   if(nextCode===currentCode){
     clearQuickEditItemCode();
     render();
     return;
   }
-  const updated={...item,code:nextCode};
+  const updated={...item,upc:nextCode};
   S.setupCodeSavingId=id;
   render();
   try{
-    setSyncing(true,'Saving order code…');
+    setSyncing(true,'Saving UPC…');
     await db.upsertItem(updated);
     S.items[idx]=updated;
     ls.set('items',S.items);
     setSyncOk();
     clearQuickEditItemCode();
-    showBanner('Order code updated.','ok');
+    showBanner('UPC updated.','ok');
     render();
   }catch(e){
     S.setupCodeSavingId=null;
@@ -2748,14 +3083,14 @@ async function commitQuickEditItemCode(id){
   }
 }
 
-function startAdd(){ clearQuickEditItemCode(); S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',order_unit:'cs',order_pack_qty:'1',reorder_trigger:'',code:''}; render(); }
+function startAdd(){ clearQuickEditItemCode(); S.formView='add'; S.editItemId=null; S.formData={name:'',cat_l1:'',cat_l2:'',par:'',unit:'cs',order_unit:'cs',order_pack_qty:'1',reorder_trigger:'',upc:'',code:''}; render(); }
 function startEdit(id){
   clearQuickEditItemCode();
   const item=S.items.find(i=>i.id===id); if(!item) return;
   S.formView='edit'; S.editItemId=id;
   const triggerRaw=parseFloat(item.reorder_trigger);
   const triggerDisplay=Number.isFinite(triggerRaw)?String(triggerRaw):'';
-  S.formData={name:item.name,cat_l1:item.cat_l1,cat_l2:item.cat_l2,par:String(item.par),unit:item.unit,order_unit:itemOrderUnitLabel(item),order_pack_qty:String(itemOrderPackQty(item)),reorder_trigger:triggerDisplay,code:item.code};
+  S.formData={name:item.name,cat_l1:item.cat_l1,cat_l2:item.cat_l2,par:String(item.par),unit:item.unit,order_unit:itemOrderUnitLabel(item),order_pack_qty:String(itemOrderPackQty(item)),reorder_trigger:triggerDisplay,upc:item.upc||'',code:item.code};
   render();
 }
 function cancelForm(){ clearQuickEditItemCode(); S.formView=null; S.editItemId=null; S.formData=null; render(); }
@@ -2768,13 +3103,14 @@ async function saveItem(){
   const existing=S.formView==='edit'?S.items.find(i=>i.id===S.editItemId):null;
   const orderPackQtyRaw=parseFloat(f.order_pack_qty);
   const item={
-    id: S.formView==='add'?Date.now().toString():S.editItemId,
+    id: S.formView==='add'?makeEntityId('item'):S.editItemId,
     name:f.name, cat_l1:f.cat_l1, cat_l2:f.cat_l2||'',
     par:parseFloat(f.par)||1,
     unit:f.unit||'cs',
     order_unit:String(f.order_unit||f.unit||'cs').trim()||String(f.unit||'cs').trim()||'cs',
     order_pack_qty:Number.isFinite(orderPackQtyRaw)&&orderPackQtyRaw>0?orderPackQtyRaw:1,
     reorder_trigger:String(f.reorder_trigger??'').trim()===''?null:(Number.isFinite(parseFloat(f.reorder_trigger))?parseFloat(f.reorder_trigger):null),
+    upc:String(f.upc||'').trim(),
     code:f.code||'',
     sort_order: existing!=null&&Number.isFinite(parseFloat(existing.sort_order))?parseFloat(existing.sort_order):S.items.length+1
   };
@@ -2916,9 +3252,11 @@ async function runTests(){
   // Test 4: Write test (insert + delete a test session)
   if(connected){
     try{
-      const testId='test_'+Date.now();
-      await sb.from('ck_sessions').insert({id:testId,counted_at:new Date().toISOString()});
-      await sb.from('ck_sessions').delete().eq('id',testId);
+      const testId=makeEntityId('test');
+      await sb.from('ck_sessions').insert(attachStoreScope({id:testId,counted_at:new Date().toISOString()}));
+      let tq=sb.from('ck_sessions').delete().eq('id',testId);
+      tq=scopeByStore(tq);
+      await tq;
       results.push({name:'Write/delete cycle',pass:true,msg:'Insert + delete OK'});
     }catch(e){ results.push({name:'Write/delete cycle',pass:false,msg:e.message}); }
   } else {
@@ -3036,8 +3374,8 @@ async function loadFromDB(){
     S.dbReady=true;
     const {items,sessions,orders} = await db.loadAll();
     if(!items.length){
-      await db.seedItems();
-      S.items = normalizeItemsForOrderMath(SEED_ITEMS);
+      const seeded=await db.seedItems();
+      S.items = normalizeItemsForOrderMath(seeded);
     } else {
       S.items = normalizeItemsForOrderMath(items);
     }
@@ -3057,7 +3395,7 @@ async function loadFromDB(){
 
 function loadFromCache(){
   const items = ls.get('items');
-  S.items = normalizeItemsForOrderMath(items||SEED_ITEMS);
+  S.items = normalizeItemsForOrderMath(items||scopedSeedItems());
   S.sessions = ls.get('sessions')||[];
   S.orders = ls.get('orders')||[];
   syncCountFormAvailability();
@@ -3078,6 +3416,7 @@ async function finishBoot(){
 }
 
 async function init(){
+  restoreActiveStoreContext();
   await loadCkLogic();
   loadBarcodeModeSetting();
 
