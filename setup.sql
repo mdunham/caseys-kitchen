@@ -182,9 +182,15 @@ create table if not exists ck_price_book (
 
 insert into ck_system_settings (id, settings)
 values ('default', jsonb_build_object(
+  'admin_pin', '9090',
   'ordering_usage_price_cents', 4900,
   'trial_days', 45,
-  'stripe_mode', 'test'
+  'stripe_mode', 'test',
+  'stripe_publishable_key', '',
+  'stripe_secret_key', '',
+  'stripe_webhook_secret', '',
+  'stripe_price_id', '',
+  'stripe_product_id', ''
 ))
 on conflict (id) do nothing;
 

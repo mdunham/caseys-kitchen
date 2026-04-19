@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>CK Inventory Admin</title>
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="./admin-manifest.json" />
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <style>
+    :root{--bg:#f5f6f8;--card:#ffffff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;--accent:#111827;--ok:#047857;--warn:#b45309;--err:#b91c1c}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .hdr{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+    .title{font-size:22px;font-weight:800}
+    .sub{font-size:12px;color:var(--muted)}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .tab{border:1px solid var(--line);background:#fff;padding:8px 10px;border-radius:10px;cursor:pointer;font-weight:600}
+    .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .grow{flex:1 1 220px}
+    label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+    input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--text)}
+    textarea{min-height:88px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:12px}
+    .btn{border:1px solid var(--line);background:#fff;color:var(--text);padding:8px 12px;border-radius:9px;cursor:pointer;font-weight:600}
+    .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .btn.danger{background:#fff1f2;border-color:#fecdd3;color:#9f1239}
+    .btn.sm{padding:6px 8px;font-size:12px}
+    .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
+    .metric{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px}
+    .mv{font-size:20px;font-weight:800}
+    .ml{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{text-align:left;border-bottom:1px solid #f1f5f9;padding:6px}
+    th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace}
+    .msg{padding:8px 10px;border-radius:9px;margin-bottom:8px;font-size:12px}
+    .msg.ok{background:#ecfdf5;color:var(--ok);border:1px solid #a7f3d0}
+    .msg.err{background:#fef2f2;color:var(--err);border:1px solid #fecaca}
+    .msg.warn{background:#fff7ed;color:var(--warn);border:1px solid #fed7aa}
+    .auth{max-width:430px;margin:70px auto;background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media (max-width:780px){.split{grid-template-columns:1fr}}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="login" class="auth">
+      <div class="title" style="font-size:20px">Admin access</div>
+      <div class="sub" style="margin-bottom:12px">Enter the admin PIN from database settings.</div>
+      <label for="admin-pin">Admin PIN</label>
+      <input id="admin-pin" type="password" inputmode="numeric" maxlength="12" autocomplete="one-time-code" />
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn primary" onclick="unlock()">Unlock</button>
+        <button class="btn" onclick="location.href='./index.html#/help'">Open Inventory App</button>
+      </div>
+      <div id="auth-msg" class="msg err hidden" style="margin-top:10px"></div>
+    </div>
+
+    <div id="app" class="hidden">
+      <div class="hdr">
+        <div>
+          <div class="title">CK Inventory Admin</div>
+          <div class="sub">Dedicated admin PWA for security, billing, and config</div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="reloadAll()">Refresh</button>
+          <button class="btn danger" onclick="lock()">Lock</button>
+        </div>
+      </div>
+
+      <div id="msg" class="hidden"></div>
+
+      <div class="tabs">
+        <button class="tab on" data-tab="overview" onclick="setTab('overview')">Overview</button>
+        <button class="tab" data-tab="config" onclick="setTab('config')">Config</button>
+        <button class="tab" data-tab="users" onclick="setTab('users')">Users</button>
+        <button class="tab" data-tab="subscriptions" onclick="setTab('subscriptions')">Subscriptions</button>
+        <button class="tab" data-tab="refunds" onclick="setTab('refunds')">Refunds</button>
+        <button class="tab" data-tab="audit" onclick="setTab('audit')">Audit</button>
+      </div>
+
+      <div id="view-overview"></div>
+      <div id="view-config" class="hidden"></div>
+      <div id="view-users" class="hidden"></div>
+      <div id="view-subscriptions" class="hidden"></div>
+      <div id="view-refunds" class="hidden"></div>
+      <div id="view-audit" class="hidden"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script>
+    const SB_URL='https://lzhawmvgkylumwcseltb.supabase.co';
+    const SB_KEY='sb_publishable_lVS5Yjtzu_t6c9LKDYTuLA_vGWL_gcC';
+    const SETTINGS_ROW_ID='default';
+    const SS_ADMIN_AUTH='ck_admin_authed';
+
+    const DEFAULT_SETTINGS={
+      admin_pin:'9090',
+      trial_days:45,
+      ordering_usage_price_cents:4900,
+      stripe_mode:'test',
+      stripe_publishable_key:'',
+      stripe_secret_key:'',
+      stripe_webhook_secret:'',
+      stripe_price_id:'',
+      stripe_product_id:''
+    };
+
+    let sb=null;
+    try{ sb=supabase.createClient(SB_URL,SB_KEY);}catch{}
+
+    const S={
+      tab:'overview',
+      authed:false,
+      snapshot:{},
+      settings:{...DEFAULT_SETTINGS}
+    };
+
+    function esc(v){
+      return String(v??'').replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
+    }
+
+    function showMsg(text,kind='ok'){
+      const el=document.getElementById('msg');
+      if(!text){ el.className='hidden'; el.textContent=''; return; }
+      el.className='msg '+kind;
+      el.textContent=text;
+    }
+
+    async function readSettings(){
+      const {data,error}=await sb.from('ck_system_settings').select('settings').eq('id',SETTINGS_ROW_ID).maybeSingle();
+      if(error) throw error;
+      const raw=data&&typeof data.settings==='object'?data.settings:{};
+      S.settings={...DEFAULT_SETTINGS,...raw};
+    }
+
+    async function saveSettingsPatch(patch){
+      const next={...S.settings,...patch};
+      const row={id:SETTINGS_ROW_ID,settings:next,updated_at:new Date().toISOString()};
+      const {error}=await sb.from('ck_system_settings').upsert(row,{onConflict:'id'});
+      if(error) throw error;
+      S.settings=next;
+      await logEvent('admin.settings.update',{keys:Object.keys(patch)});
+    }
+
+    async function loadSnapshot(){
+      const out={users:[],subs:[],refunds:[],audit:[],stores:[]};
+      const reads=[
+        ['users','ck_users','*',120],
+        ['subs','ck_subscriptions','*',120],
+        ['refunds','ck_refunds','*',120],
+        ['audit','ck_audit_logs','*',220],
+        ['stores','ck_stores','*',220]
+      ];
+      for(const [key,table,sel,lim] of reads){
+        try{
+          const {data,error}=await sb.from(table).select(sel).limit(lim);
+          if(!error) out[key]=data||[];
+        }catch{}
+      }
+      out.audit=(out.audit||[]).slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+      out.refunds=(out.refunds||[]).slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+      S.snapshot=out;
+    }
+
+    async function resolveAccountForStore(storeId){
+      const sid=String(storeId||'').trim();
+      if(!sid) return null;
+      try{
+        const {data,error}=await sb.from('ck_account_stores').select('account_id').eq('store_id',sid).limit(1).maybeSingle();
+        if(error) return null;
+        return data&&data.account_id?data.account_id:null;
+      }catch{return null;}
+    }
+
+    async function resolveStoreForAccount(accountId){
+      const aid=String(accountId||'').trim();
+      if(!aid) return null;
+      try{
+        const {data,error}=await sb.from('ck_account_stores').select('store_id').eq('account_id',aid).limit(1).maybeSingle();
+        if(error) return null;
+        return data&&data.store_id?data.store_id:null;
+      }catch{return null;}
+    }
+
+    async function logEvent(eventType, details={}){
+      try{
+        const row={
+          id:'audit:'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),
+          event_type:String(eventType||'admin.event'),
+          actor:'admin_console',
+          details,
+          created_at:new Date().toISOString()
+        };
+        await sb.from('ck_audit_logs').insert(row);
+      }catch{}
+    }
+
+    async function unlock(){
+      if(!sb){
+        const m=document.getElementById('auth-msg');
+        m.className='msg err';
+        m.textContent='Database client failed to initialize.';
+        return;
+      }
+      const inp=document.getElementById('admin-pin');
+      const pin=String(inp&&inp.value||'').trim();
+      const m=document.getElementById('auth-msg');
+      m.className='hidden';
+      try{
+        await readSettings();
+        const expected=String(S.settings.admin_pin||DEFAULT_SETTINGS.admin_pin).trim();
+        if(pin!==expected){
+          m.className='msg err';
+          m.textContent='Incorrect admin PIN.';
+          return;
+        }
+        S.authed=true;
+        try{ sessionStorage.setItem(SS_ADMIN_AUTH,'1'); }catch{}
+        document.getElementById('login').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        await reloadAll();
+      }catch(e){
+        m.className='msg err';
+        m.textContent=e&&e.message?e.message:'Unable to validate PIN.';
+      }
+    }
+
+    function lock(){
+      S.authed=false;
+      try{ sessionStorage.removeItem(SS_ADMIN_AUTH); }catch{}
+      document.getElementById('app').classList.add('hidden');
+      document.getElementById('login').classList.remove('hidden');
+      const pin=document.getElementById('admin-pin');
+      if(pin) pin.value='';
+      showMsg('');
+    }
+
+    function metric(v,l){
+      return `<div class="metric"><div class="mv">${esc(v)}</div><div class="ml">${esc(l)}</div></div>`;
+    }
+
+    function renderOverview(){
+      const snap=S.snapshot||{};
+      const users=(snap.users||[]).length;
+      const subs=(snap.subs||[]).length;
+      const refunds=(snap.refunds||[]).length;
+      const events=(snap.audit||[]).length;
+      document.getElementById('view-overview').innerHTML=`
+        <div class="metrics">
+          ${metric(users,'users')}
+          ${metric(subs,'subscriptions')}
+          ${metric(refunds,'refunds')}
+          ${metric(events,'audit events')}
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:8px">Admin settings summary</div>
+          <div class="row">
+            <div class="grow"><b>Admin PIN:</b> <span class="mono">${esc(S.settings.admin_pin||'')}</span></div>
+            <div class="grow"><b>Trial days:</b> ${esc(S.settings.trial_days)}</div>
+            <div class="grow"><b>Stripe mode:</b> ${esc(S.settings.stripe_mode||'')}</div>
+            <div class="grow"><b>Plan price:</b> $${(Number(S.settings.ordering_usage_price_cents||0)/100).toFixed(2)}</div>
+          </div>
+        </div>`;
+    }
+
+    function renderConfig(){
+      document.getElementById('view-config').innerHTML=`
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:8px">Security and billing config (DB-backed)</div>
+        <div class="split">
+          <div>
+            <label>Admin PIN</label>
+            <input id="cfg-admin-pin" value="${esc(S.settings.admin_pin||'')}" />
+          </div>
+          <div>
+            <label>Trial days</label>
+            <input id="cfg-trial-days" type="number" value="${esc(S.settings.trial_days||45)}" />
+          </div>
+          <div>
+            <label>Ordering usage price cents</label>
+            <input id="cfg-price" type="number" value="${esc(S.settings.ordering_usage_price_cents||4900)}" />
+          </div>
+          <div>
+            <label>Stripe mode</label>
+            <select id="cfg-stripe-mode"><option value="test"${String(S.settings.stripe_mode)==='test'?' selected':''}>test</option><option value="live"${String(S.settings.stripe_mode)==='live'?' selected':''}>live</option></select>
+          </div>
+          <div>
+            <label>Stripe publishable key</label>
+            <input id="cfg-pk" value="${esc(S.settings.stripe_publishable_key||'')}" />
+          </div>
+          <div>
+            <label>Stripe secret key</label>
+            <input id="cfg-sk" value="${esc(S.settings.stripe_secret_key||'')}" />
+          </div>
+          <div>
+            <label>Stripe webhook secret</label>
+            <input id="cfg-whsec" value="${esc(S.settings.stripe_webhook_secret||'')}" />
+          </div>
+          <div>
+            <label>Stripe price id</label>
+            <input id="cfg-price-id" value="${esc(S.settings.stripe_price_id||'')}" />
+          </div>
+          <div>
+            <label>Stripe product id</label>
+            <input id="cfg-product-id" value="${esc(S.settings.stripe_product_id||'')}" />
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn primary" onclick="saveConfig()">Save config</button>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:6px">Raw JSON (advanced)</div>
+        <textarea id="cfg-json">${esc(JSON.stringify(S.settings,null,2))}</textarea>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" onclick="saveRawConfig()">Save raw JSON</button>
+        </div>
+      </div>`;
+    }
+
+    async function saveConfig(){
+      try{
+        const patch={
+          admin_pin:String(document.getElementById('cfg-admin-pin').value||'').trim()||'9090',
+          trial_days:Math.max(1,parseInt(document.getElementById('cfg-trial-days').value||'45',10)||45),
+          ordering_usage_price_cents:Math.max(0,parseInt(document.getElementById('cfg-price').value||'0',10)||0),
+          stripe_mode:String(document.getElementById('cfg-stripe-mode').value||'test').trim()||'test',
+          stripe_publishable_key:String(document.getElementById('cfg-pk').value||'').trim(),
+          stripe_secret_key:String(document.getElementById('cfg-sk').value||'').trim(),
+          stripe_webhook_secret:String(document.getElementById('cfg-whsec').value||'').trim(),
+          stripe_price_id:String(document.getElementById('cfg-price-id').value||'').trim(),
+          stripe_product_id:String(document.getElementById('cfg-product-id').value||'').trim()
+        };
+        await saveSettingsPatch(patch);
+        showMsg('Settings saved.','ok');
+        renderConfig();
+        renderOverview();
+      }catch(e){
+        showMsg(e&&e.message?e.message:'Unable to save settings.','err');
+      }
+    }
+
+    async function saveRawConfig(){
+      const txt=document.getElementById('cfg-json').value||'{}';
+      try{
+        const parsed=JSON.parse(txt);
+        if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)) throw new Error('JSON must be an object.');
+        await saveSettingsPatch(parsed);
+        showMsg('Raw settings saved.','ok');
+        renderConfig();
+        renderOverview();
+      }catch(e){
+        showMsg(e&&e.message?e.message:'Invalid JSON settings.','err');
+      }
+    }
+
+    function renderUsers(){
+      const users=(S.snapshot&&S.snapshot.users)||[];
+      const rows=users.slice(0,80).map(u=>`<tr><td>${esc(u.email||u.id||'')}</td><td>${esc(u.role||'')}</td><td>${esc(u.account_id||'')}</td><td><button class="btn sm danger" onclick="deleteUser('${esc(u.id||'')}')">Delete</button></td></tr>`).join('');
+      document.getElementById('view-users').innerHTML=`
+        <div class="card">
+          <div class="row">
+            <div class="grow"><label>Email</label><input id="u-email" placeholder="user@company.com" /></div>
+            <div class="grow"><label>Display name</label><input id="u-name" placeholder="Display name" /></div>
+            <div class="grow"><label>Role</label><input id="u-role" placeholder="manager" /></div>
+            <div class="grow"><label>Store ID (optional)</label><input id="u-store" placeholder="store_1406" /></div>
+            <div class="grow"><label>Account ID (optional)</label><input id="u-account" placeholder="acct_1406" /></div>
+          </div>
+          <div style="margin-top:8px"><button class="btn primary" onclick="saveUser()">Add / update user</button></div>
+        </div>
+        <div class="card"><table><thead><tr><th>Email</th><th>Role</th><th>Account</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    async function saveUser(){
+      const email=String(document.getElementById('u-email').value||'').trim().toLowerCase();
+      const fullName=String(document.getElementById('u-name').value||'').trim();
+      const role=String(document.getElementById('u-role').value||'').trim()||'manager';
+      const storeId=String(document.getElementById('u-store').value||'').trim();
+      let accountId=String(document.getElementById('u-account').value||'').trim();
+      if(!email){ showMsg('Email is required.','warn'); return; }
+      if(!accountId&&storeId){ accountId=await resolveAccountForStore(storeId); }
+      if(!accountId){ showMsg('account_id is required (or a valid store_id linked to account).','warn'); return; }
+      try{
+        const row={
+          id:'usr:'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),
+          account_id:accountId,
+          email,
+          full_name:fullName,
+          role,
+          is_active:true,
+          updated_at:new Date().toISOString()
+        };
+        const {error}=await sb.from('ck_users').upsert(row,{onConflict:'id'});
+        if(error) throw error;
+        await logEvent('admin.user.upsert',{id:row.id,email:row.email,account_id:row.account_id});
+        showMsg('User saved.','ok');
+        await reloadAll();
+      }catch(e){ showMsg(e&&e.message?e.message:'Unable to save user.','err'); }
+    }
+
+    async function deleteUser(id){
+      const userId=String(id||'').trim();
+      if(!userId) return;
+      if(!confirm('Delete this user?')) return;
+      try{
+        const {error}=await sb.from('ck_users').delete().eq('id',userId);
+        if(error) throw error;
+        await logEvent('admin.user.delete',{id:userId});
+        showMsg('User deleted.','ok');
+        await reloadAll();
+      }catch(e){ showMsg(e&&e.message?e.message:'Unable to delete user.','err'); }
+    }
+
+    function renderSubs(){
+      const subs=(S.snapshot&&S.snapshot.subs)||[];
+      const rows=subs.slice(0,100).map(s=>`<tr><td>${esc(s.account_id||'')}</td><td>${esc(s.store_id||'')}</td><td>${esc(s.plan_code||'')}</td><td>${esc(s.status||'')}</td><td><button class="btn sm danger" onclick="deleteSub('${esc(s.account_id||'')}','${esc(s.store_id||'')}','${esc(s.plan_code||'')}')">Delete</button></td></tr>`).join('');
+      document.getElementById('view-subscriptions').innerHTML=`
+        <div class="card">
+          <div class="row">
+            <div class="grow"><label>Account ID</label><input id="s-account" /></div>
+            <div class="grow"><label>Store ID</label><input id="s-store" /></div>
+            <div class="grow"><label>Plan code</label><input id="s-plan" value="ordering_usage" /></div>
+            <div class="grow"><label>Status</label><input id="s-status" value="active" /></div>
+          </div>
+          <div style="margin-top:8px" class="row">
+            <button class="btn primary" onclick="saveSub()">Save subscription</button>
+            <button class="btn" onclick="setFreeSub()">Set free plan</button>
+          </div>
+        </div>
+        <div class="card"><table><thead><tr><th>Account</th><th>Store</th><th>Plan</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    async function saveSub(){
+      const account_id=String(document.getElementById('s-account').value||'').trim();
+      const store_id=String(document.getElementById('s-store').value||'').trim();
+      const plan_code=String(document.getElementById('s-plan').value||'ordering_usage').trim()||'ordering_usage';
+      const status=String(document.getElementById('s-status').value||'active').trim()||'active';
+      if(!account_id||!store_id){ showMsg('account_id and store_id are required.','warn'); return; }
+      try{
+        const trialDays=Math.max(1,parseInt(S.settings.trial_days||45,10)||45);
+        const nowIso=new Date().toISOString();
+        const row={
+          account_id,store_id,plan_code,status,
+          trial_started_at:nowIso,
+          trial_ends_at:new Date(Date.now()+trialDays*24*60*60*1000).toISOString(),
+          updated_at:nowIso
+        };
+        const {error}=await sb.from('ck_subscriptions').upsert(row,{onConflict:'account_id,store_id,plan_code'});
+        if(error) throw error;
+        await logEvent('admin.subscription.upsert',{account_id,store_id,plan_code,status});
+        showMsg('Subscription saved.','ok');
+        await reloadAll();
+      }catch(e){ showMsg(e&&e.message?e.message:'Unable to save subscription.','err'); }
+    }
+
+    async function setFreeSub(){
+      const account_id=String(document.getElementById('s-account').value||'').trim();
+      const store_id=String(document.getElementById('s-store').value||'').trim();
+      if(!account_id||!store_id){ showMsg('account_id and store_id are required.','warn'); return; }
+      try{
+        const row={
+          account_id,store_id,plan_code:'ordering_usage',status:'free',
+          trial_started_at:null,trial_ends_at:null,
+          updated_at:new Date().toISOString()
+        };
+        const {error}=await sb.from('ck_subscriptions').upsert(row,{onConflict:'account_id,store_id,plan_code'});
+        if(error) throw error;
+        await logEvent('admin.subscription.set_free',{account_id,store_id});
+        showMsg('Free plan set.','ok');
+        await reloadAll();
+      }catch(e){ showMsg(e&&e.message?e.message:'Unable to set free plan.','err'); }
+    }
+
+    async function deleteSub(accountId,storeId,planCode){
+      const account_id=String(accountId||'').trim();
+      const store_id=String(storeId||'').trim();
+      const plan_code=String(planCode||'').trim();
+      if(!account_id||!store_id||!plan_code) return;
+      if(!confirm('Delete this subscription row?')) return;
+      try{
+        const {error}=await sb.from('ck_subscriptions').delete().eq('account_id',account_id).eq('store_id',store_id).eq('plan_code',plan_code);
+        if(error) throw error;
+        await logEvent('admin.subscription.delete',{account_id,store_id,plan_code});
+        showMsg('Subscription deleted.','ok');
+        await reloadAll();
+      }catch(e){ showMsg(e&&e.message?e.message:'Unable to delete subscription.','err'); }
+    }
+
+    function renderRefunds(){
+      const refunds=(S.snapshot&&S.snapshot.refunds)||[];
+      const rows=refunds.slice(0,120).map(r=>`<tr><td class="mono">${esc(r.id||'')}</td><td>${esc(r.account_id||'')}</td><td>${esc(r.store_id||'')}</td><td>$${(Number(r.amount_cents||0)/100).toFixed(2)}</td><td>${esc(r.status||'')}</td></tr>`).join('');
+      document.getElementById('view-refunds').innerHTML=`
+        <div class="card">
+          <div class="row">
+            <div class="grow"><label>Account ID (optional)</label><input id="r-account" /></div>
+            <div class="grow"><label>Store ID (optional)</label><input id="r-store" /></div>
+            <div class="grow"><label>Amount cents</label><input id="r-amount" type="number" /></div>
+            <div class="grow"><label>Reason</label><input id="r-reason" value="admin_refund" /></div>
+          </div>
+          <div style="margin-top:8px"><button class="btn primary" onclick="issueRefund()">Issue refund</button></div>
+        </div>
+        <div class="card"><table><thead><tr><th>ID</th><th>Account</th><th>Store</th><th>Amount</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    async function issueRefund(){
+      let account_id=String(document.getElementById('r-account').value||'').trim();
+      let store_id=String(document.getElementById('r-store').value||'').trim();
+      const amount_cents=Math.max(0,parseInt(document.getElementById('r-amount').value||'0',10)||0);
+      const reason=String(document.getElementById('r-reason').value||'').trim()||'admin_refund';
+      if(amount_cents<=0){ showMsg('Refund amount must be greater than 0.','warn'); return; }
+      if(!account_id&&store_id) account_id=await resolveAccountForStore(store_id);
+      if(!store_id&&account_id) store_id=await resolveStoreForAccount(account_id);
+      if(!account_id||!store_id){ showMsg('Provide account_id and store_id (or one that can resolve the other).','warn'); return; }
+      try{
+        const nowIso=new Date().toISOString();
+        const payevt={
+          id:'payevt:'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),
+          account_id,store_id,subscription_id:null,provider:'stripe',
+          provider_payment_id:'stripepi:'+Date.now().toString(36),
+          amount_cents,refunded_cents:amount_cents,currency:'usd',status:'refunded',
+          occurred_at:nowIso,metadata:{source:'admin_console'},created_at:nowIso
+        };
+        const {error:pe}=await sb.from('ck_payment_events').insert(payevt);
+        if(pe) throw pe;
+        const refund={
+          id:'refund:'+Date.now().toString(36)+Math.random().toString(36).slice(2,8),
+          payment_event_id:payevt.id,account_id,store_id,amount_cents,reason,status:'succeeded',
+          created_by:'admin_console',created_at:nowIso
+        };
+        const {error:re}=await sb.from('ck_refunds').insert(refund);
+        if(re) throw re;
+        await logEvent('admin.refund.create',{refund_id:refund.id,amount_cents,reason,account_id,store_id});
+        showMsg('Refund issued.','ok');
+        await reloadAll();
+      }catch(e){ showMsg(e&&e.message?e.message:'Unable to issue refund.','err'); }
+    }
+
+    function renderAudit(){
+      const audit=(S.snapshot&&S.snapshot.audit)||[];
+      const rows=audit.slice(0,180).map(a=>`<tr><td>${esc(a.event_type||'')}</td><td>${esc(a.actor||'')}</td><td class="mono">${esc(a.created_at||'')}</td></tr>`).join('');
+      document.getElementById('view-audit').innerHTML=`<div class="card"><table><thead><tr><th>Event</th><th>Actor</th><th>At</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    function setTab(tab){
+      S.tab=tab;
+      document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+      ['overview','config','users','subscriptions','refunds','audit'].forEach(k=>{
+        const v=document.getElementById('view-'+k);
+        if(v) v.classList.toggle('hidden',k!==tab);
+      });
+    }
+
+    async function reloadAll(){
+      try{
+        await readSettings();
+        await loadSnapshot();
+        renderOverview();
+        renderConfig();
+        renderUsers();
+        renderSubs();
+        renderRefunds();
+        renderAudit();
+      }catch(e){
+        showMsg(e&&e.message?e.message:'Unable to load admin data.','err');
+      }
+    }
+
+    async function init(){
+      if('serviceWorker' in navigator){ navigator.serviceWorker.register('./admin-sw.js').catch(()=>{}); }
+      const saved=(()=>{ try{return sessionStorage.getItem(SS_ADMIN_AUTH)==='1';}catch{return false;} })();
+      if(saved){
+        try{
+          await readSettings();
+          S.authed=true;
+          document.getElementById('login').classList.add('hidden');
+          document.getElementById('app').classList.remove('hidden');
+          await reloadAll();
+        }catch{}
+      }
+    }
+
+    window.setTab=setTab;
+    window.unlock=unlock;
+    window.lock=lock;
+    window.reloadAll=reloadAll;
+    window.saveConfig=saveConfig;
+    window.saveRawConfig=saveRawConfig;
+    window.saveUser=saveUser;
+    window.deleteUser=deleteUser;
+    window.saveSub=saveSub;
+    window.setFreeSub=setFreeSub;
+    window.deleteSub=deleteSub;
+    window.issueRefund=issueRefund;
+
+    init();
+  </script>
+</body>
+</html>
