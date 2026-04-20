@@ -44,20 +44,32 @@
     .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     @media (max-width:780px){.split{grid-template-columns:1fr}}
     .hidden{display:none}
+    .u-mt-8{margin-top:8px}
+    .u-mt-10{margin-top:10px}
+    .u-mb-6{margin-bottom:6px}
+    .u-mb-8{margin-bottom:8px}
+    .u-mb-12{margin-bottom:12px}
+    .u-gap-8{gap:8px}
+    .u-row{display:flex}
+    .u-row-wrap{display:flex;flex-wrap:wrap;gap:8px}
+    .u-row-center{display:flex;align-items:center;gap:8px}
+    .u-fw-700{font-weight:700}
+    .u-fs-20{font-size:20px}
+    .u-label-note{font-size:11px;color:var(--muted);line-height:1.4}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div id="login" class="auth">
-      <div class="title" style="font-size:20px">Admin access</div>
-      <div class="sub" style="margin-bottom:12px">Enter the admin PIN from database settings.</div>
+      <div class="title u-fs-20">Admin access</div>
+      <div class="sub u-mb-12">Enter the admin PIN from database settings.</div>
       <label for="admin-pin">Admin PIN</label>
       <input id="admin-pin" type="password" inputmode="numeric" maxlength="12" autocomplete="one-time-code" />
-      <div style="margin-top:10px;display:flex;gap:8px">
+      <div class="u-mt-10 u-row u-gap-8">
         <button class="btn primary" onclick="unlock()">Unlock</button>
         <button class="btn" onclick="location.href='./index.html#/help'">Open Inventory App</button>
       </div>
-      <div id="auth-msg" class="msg err hidden" style="margin-top:10px"></div>
+      <div id="auth-msg" class="msg err hidden u-mt-10"></div>
     </div>
 
     <div id="app" class="hidden">
@@ -259,7 +271,7 @@
           ${metric(events,'audit events')}
         </div>
         <div class="card">
-          <div style="font-weight:700;margin-bottom:8px">Admin settings summary</div>
+          <div class="u-fw-700 u-mb-8">Admin settings summary</div>
           <div class="row">
             <div class="grow"><b>Admin PIN:</b> <span class="mono">${esc(S.settings.admin_pin||'')}</span></div>
             <div class="grow"><b>Trial days:</b> ${esc(S.settings.trial_days)}</div>
@@ -272,7 +284,7 @@
     function renderConfig(){
       document.getElementById('view-config').innerHTML=`
       <div class="card">
-        <div style="font-weight:700;margin-bottom:8px">Security and billing config (DB-backed)</div>
+        <div class="u-fw-700 u-mb-8">Security and billing config (DB-backed)</div>
         <div class="split">
           <div>
             <label>Admin PIN</label>
@@ -311,14 +323,14 @@
             <input id="cfg-product-id" value="${esc(S.settings.stripe_product_id||'')}" />
           </div>
         </div>
-        <div style="margin-top:10px">
+        <div class="u-mt-10">
           <button class="btn primary" onclick="saveConfig()">Save config</button>
         </div>
       </div>
       <div class="card">
-        <div style="font-weight:700;margin-bottom:6px">Raw JSON (advanced)</div>
+        <div class="u-fw-700 u-mb-6">Raw JSON (advanced)</div>
         <textarea id="cfg-json">${esc(JSON.stringify(S.settings,null,2))}</textarea>
-        <div class="row" style="margin-top:8px">
+        <div class="row u-mt-8">
           <button class="btn" onclick="saveRawConfig()">Save raw JSON</button>
         </div>
       </div>`;
@@ -372,7 +384,7 @@
             <div class="grow"><label>Store ID (optional)</label><input id="u-store" placeholder="store_1406" /></div>
             <div class="grow"><label>Account ID (optional)</label><input id="u-account" placeholder="acct_1406" /></div>
           </div>
-          <div style="margin-top:8px"><button class="btn primary" onclick="saveUser()">Add / update user</button></div>
+          <div class="u-mt-8"><button class="btn primary" onclick="saveUser()">Add / update user</button></div>
         </div>
         <div class="card"><table><thead><tr><th>Email</th><th>Role</th><th>Account</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
@@ -428,7 +440,7 @@
             <div class="grow"><label>Plan code</label><input id="s-plan" value="ordering_usage" /></div>
             <div class="grow"><label>Status</label><input id="s-status" value="active" /></div>
           </div>
-          <div style="margin-top:8px" class="row">
+          <div class="row u-mt-8">
             <button class="btn primary" onclick="saveSub()">Save subscription</button>
             <button class="btn" onclick="setFreeSub()">Set free plan</button>
           </div>
@@ -503,7 +515,7 @@
             <div class="grow"><label>Amount cents</label><input id="r-amount" type="number" /></div>
             <div class="grow"><label>Reason</label><input id="r-reason" value="admin_refund" /></div>
           </div>
-          <div style="margin-top:8px"><button class="btn primary" onclick="issueRefund()">Issue refund</button></div>
+          <div class="u-mt-8"><button class="btn primary" onclick="issueRefund()">Issue refund</button></div>
         </div>
         <div class="card"><table><thead><tr><th>ID</th><th>Account</th><th>Store</th><th>Amount</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     }
