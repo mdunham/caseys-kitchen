@@ -3365,6 +3365,71 @@ function renderHelp(){
   </div>`;
 }
 
+function canAccessFeature(feature){
+  const access=S.featureAccess||{};
+  if(feature==='count') return access.count!==false;
+  if(feature==='order') return access.ordering!==false;
+  if(feature==='receive') return access.receive!==false;
+  if(feature==='usage') return access.usage!==false;
+  return true;
+}
+
+function renderFeatureGateBanner(feature){
+  if(canAccessFeature(feature)) return '';
+  const source=String((S.featureAccess&&S.featureAccess.source)||'subscription');
+  if(source==='trial_expired'){
+    return `<div class="banner banner-warn" style="margin-bottom:8px;line-height:1.45">Your ${DEFAULT_TRIAL_DAYS}-day trial for Ordering and Usage has ended. Contact your admin to activate a paid plan or set this store to free.</div>`;
+  }
+  return `<div class="banner banner-warn" style="margin-bottom:8px;line-height:1.45">This feature is disabled by current subscription settings.</div>`;
+}
+
+function updateFeatureAccessFromSnapshot(snapshot){
+  const base={count:true,ordering:true,receive:true,usage:true,source:'legacy'};
+  S.billingCtx=snapshot||null;
+  if(!snapshot||!Array.isArray(snapshot.subscriptions)){
+    S.featureAccess=base;
+    return;
+  }
+  const subs=snapshot.subscriptions.filter(s=>String(s&&s.store_id||'').trim()===ACTIVE_STORE.id);
+  if(!subs.length){
+    S.featureAccess=base;
+    return;
+  }
+  const now=Date.now();
+  let allowOrdering=false;
+  let source='subscription';
+  for(const sub of subs){
+    const status=String(sub&&sub.status||'').toLowerCase();
+    const isFree=!!(sub&&sub.is_free) || status==='free';
+    if(isFree){
+      allowOrdering=true;
+      source='free';
+      break;
+    }
+    if(status==='active'){
+      allowOrdering=true;
+      source='active';
+      break;
+    }
+    if(status==='trialing'){
+      const endTs=Date.parse(sub&&sub.trial_ends_at||'');
+      if(!Number.isNaN(endTs)&&endTs>=now){
+        allowOrdering=true;
+        source='trialing';
+        break;
+      }
+      source='trial_expired';
+    }
+  }
+  S.featureAccess={
+    count:true,
+    ordering:allowOrdering,
+    receive:allowOrdering,
+    usage:allowOrdering,
+    source
+  };
+}
+
 // ── SETUP TAB ────────────────────────────────────────────────────────────────
 function toggleDeveloperInfo(){
   S.showDeveloperInfo=!S.showDeveloperInfo;
