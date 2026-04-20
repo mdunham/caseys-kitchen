@@ -227,6 +227,14 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .order-sum-v{font-size:18px;font-weight:700;font-family:'SF Mono',monospace;color:var(--ck-red);line-height:1.1}
 .order-sum-l{font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
 .order-sum-note{font-size:10px;color:#9ca3af;margin-top:8px;line-height:1.35}
+.order-status-card{background:#fff;border:1px solid var(--ck-line);border-radius:10px;padding:10px 11px;margin-bottom:8px}
+.order-status-card.ok{border-color:#86efac;background:linear-gradient(180deg,#f0fdf4 0%,#fff 100%)}
+.order-status-title{font-size:12px;font-weight:700;line-height:1.35;color:#111}
+.order-status-meta{font-size:11px;color:#6b7280;line-height:1.4;margin-top:4px}
+.order-status-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.order-status-details{margin-top:8px}
+.order-status-details summary{cursor:pointer;font-size:11px;font-weight:600;color:#374151}
+.order-status-details-list{margin:8px 0 0;padding-left:16px;color:#6b7280;font-size:11px;line-height:1.4}
 .order-hide-scanned-row{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:8px 10px;background:#fff;border:1px solid var(--ck-line);border-radius:8px;font-size:12px;color:#374151}
 .order-hide-scanned-row input{width:16px;height:16px;accent-color:var(--ck-red);flex-shrink:0}
 .order-hide-scanned-row label{cursor:pointer;user-select:none;line-height:1.3}
@@ -3458,30 +3466,41 @@ function renderOrder(){
   const ex=getOrderRecExcludedSet();
   const orderItems=pendingForLatest?rawRecommended:rawRecommended.filter(it=>!ex.has(it.id));
   const removedFromOrder=pendingForLatest?[]:rawRecommended.filter(it=>ex.has(it.id));
-
-  h+=`<div class="banner banner-info u-mb-7">Based on count from ${fmtDate(last.counted_at)}</div>`;
+  const statusNotes=[`Based on count from ${fmtDate(last.counted_at)}`];
+  let statusCardVariant='info';
+  let statusCardTitle='Order list ready.';
+  let statusCardMeta='Review each line, scan as you enter it on your ordering device, then log when complete.';
+  let statusCardActions='';
 
   if(pendingForLatest){
     const lines=Object.keys(pendingForLatest.items||{});
     const nLines=lines.length;
     const sumLogged=Object.values(pendingForLatest.items||{}).reduce((s,d)=>s+(parseFloat(d.recommended)||0),0);
-    h+=`<div class="banner banner-ok u-mb-7">
-      <div style="margin-bottom:8px;line-height:1.45">An order is <strong>already saved</strong> for this count (${fmtDateTime(pendingForLatest.ordered_at)}): <strong>${nLines}</strong> line items, <strong>${sumLogged}</strong> total recommended units. Open <strong>Receive</strong> when you are ready to confirm the truck.</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('receive')">Open Receive</button>
-        <button type="button" class="btn btn-danger btn-sm" onclick="deletePendingOrderForLatest()">Delete order and start over</button>
-      </div>
-    </div>`;
+    statusCardVariant='ok';
+    statusCardTitle='Order already saved for this count.';
+    statusCardMeta=`Logged ${fmtDateTime(pendingForLatest.ordered_at)} · ${nLines} line item${nLines!==1?'s':''} · ${sumLogged} total recommended units.`;
+    statusCardActions=`<button type="button" class="btn btn-secondary btn-sm" onclick="setTab('receive')">Open Receive</button>
+      <button type="button" class="btn btn-danger btn-sm" onclick="deletePendingOrderForLatest()">Delete order and start over</button>`;
+    statusNotes.push('Open Receive when you are ready to confirm the truck.');
   }
   if(otherPending.length){
-    h+=`<div class="banner banner-warn u-mb-7">A pending order is still on file from an older count. Review or receive it on the Receive tab.</div>`;
+    statusNotes.push('A pending order from an older count is still on file. Review or receive it on the Receive tab.');
   }
+  if(rawRecommended.length && !orderItems.length && !pendingForLatest){
+    statusNotes.push('Every recommended line is set to not order for this run. Restore a line below to put it back on the list.');
+  }
+
+  h+=`<div class="order-status-card${statusCardVariant==='ok'?' ok':''}">
+    <div class="order-status-title">${statusCardTitle}</div>
+    <div class="order-status-meta">${statusCardMeta}</div>
+    ${statusCardActions?`<div class="order-status-actions">${statusCardActions}</div>`:''}
+    ${statusNotes.length>1?`<details class="order-status-details"><summary>Details (${statusNotes.length})</summary><ul class="order-status-details-list">${statusNotes.map(note=>`<li>${note}</li>`).join('')}</ul></details>`:''}
+  </div>`;
 
   if(!rawRecommended.length && !pendingForLatest){
     return h+`<div class="empty" style="color:#166534">✓ All items at or above par — no order needed!</div>`;
   }
   if(rawRecommended.length && !orderItems.length && !pendingForLatest){
-    h+=`<div class="banner banner-info" style="margin-bottom:8px;line-height:1.45">Every recommended line is set to <strong>not order</strong> for this run. Tap <strong>Restore</strong> on a line to put it back on the list.</div>`;
     removedFromOrder.forEach(it=>{
       h+=`<div class="card" style="margin-bottom:6px;opacity:.92">
         <div class="item-name" style="font-size:14px">${escapeHtml(it.name)}</div>
