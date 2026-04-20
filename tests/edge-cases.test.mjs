@@ -75,6 +75,28 @@ describe('denormalizeOrders (line items + NaN coercions)', () => {
     expect(out[0].items.a).toEqual({ recommended: 0, received: null });
     expect(out[0].items.b).toEqual({ recommended: 5, received: 2.5 });
   });
+
+  it('hydrates optional receipt notes and confirmed-map defaults', () => {
+    const orders = [{ id: 'o1', ordered_at: '2026-01-01T00:00:00Z', order_notes: null, confirmed_map: null }];
+    const out = denormalizeOrders(orders, []);
+    expect(out).toHaveLength(1);
+    expect(out[0].order_notes).toBe('');
+    expect(out[0].confirmed_map).toEqual({});
+  });
+
+  it('normalizes truthy confirmed flags and string notes', () => {
+    const orders = [
+      {
+        id: 'o1',
+        ordered_at: '2026-01-01T00:00:00Z',
+        order_notes: 77,
+        confirmed_map: { a: true, b: 0, c: 'yes' },
+      },
+    ];
+    const out = denormalizeOrders(orders, []);
+    expect(out[0].order_notes).toBe('77');
+    expect(out[0].confirmed_map).toEqual({ a: true, c: true });
+  });
 });
 
 describe('computeOrderLines — predicted bad data from DB or local edits', () => {
