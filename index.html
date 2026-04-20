@@ -3295,8 +3295,9 @@ function renderCount(){
   }
 
   h+=`<div class="sticky-footer">
-    <div class="sticky-footer-row between">
+    <div class="sticky-footer-row between" style="flex-wrap:wrap;gap:8px">
       <span style="font-size:12px;color:#9ca3af">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</span>
+      ${!formLocked?`<button type="button" id="count-save-btn" class="btn btn-primary" onclick="completeInventory()" ${counted===0?'disabled':''}>Save Count</button>`:''}
     </div>
     ${stickyFooterCopyright()}
   </div>

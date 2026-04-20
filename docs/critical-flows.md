@@ -72,8 +72,9 @@ In `renderCount()`:
 ## 2) Save count
 
 ### Entry point
-- User action: **Save Count** footer button on Count tab.
+- User action: **Save Count** button in the Count tab's sticky footer (alongside the date display).
 - Function: `completeInventory()`.
+- Visibility: the footer Save Count button is only rendered when the count form is active (`!formLocked`); it is hidden while the start-new-count lock modal or resume-draft prompt is shown.
 
 ### Expected state transitions
 
@@ -104,7 +105,7 @@ In `renderCount()`:
 
 ### Key UI states from current render functions
 
-- Save button is disabled when `counted===0`.
+- Save Count button lives in the sticky footer and is disabled when `counted===0`. Its `disabled` state is live-updated by `setDraft()` via `#count-save-btn`.
 - Progress bar reflects counted percent; when 100% it gets `.done` styling.
 - Sync error banner is shown inline in Count view when `S.syncError` exists.
 
