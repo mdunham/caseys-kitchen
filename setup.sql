@@ -41,6 +41,8 @@ create table if not exists ck_orders (
   session_id text references ck_sessions(id),
   status text not null default 'pending',
   received_at timestamptz,
+  order_notes text default '',
+  confirmed_map jsonb not null default '{}'::jsonb,
   created_at timestamptz default now()
 );
 
@@ -276,6 +278,12 @@ update ck_counts set updated_at = coalesce(updated_at, created_at) where updated
 alter table ck_sessions add column if not exists status text not null default 'final';
 update ck_sessions set status='final' where status is null or trim(status)='';
 create index if not exists ck_sessions_status_idx on ck_sessions(status);
+
+-- Migration: optional receipt annotations on orders (safe to re-run)
+alter table ck_orders add column if not exists order_notes text default '';
+alter table ck_orders add column if not exists confirmed_map jsonb not null default '{}'::jsonb;
+update ck_orders set order_notes = '' where order_notes is null;
+update ck_orders set confirmed_map = '{}'::jsonb where confirmed_map is null;
 
 -- Migration: item-order math fields for case packs + reorder trigger (safe to re-run)
 alter table ck_items add column if not exists order_unit text default '';

@@ -142,6 +142,14 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .qinput{width:58px;padding:5px 5px;background:#f9fafb;border:1px solid var(--ck-line);border-radius:7px;color:#111;font-size:14px;font-family:'SF Mono',monospace;font-weight:600;text-align:center;outline:none;transition:border-color .15s}
 .qinput:focus{border-color:var(--ck-red);background:#fff}
 .ulbl{font-size:11px;color:#9ca3af;margin-left:3px}
+.recv-notes{width:100%;min-height:74px;resize:vertical;font-size:12px;line-height:1.4}
+.recv-item-row{transition:background .15s ease,box-shadow .15s ease,border-radius .15s ease}
+.recv-item-row.recv-confirmed{background:linear-gradient(90deg,#ecfdf5 0%,#fff 62%);box-shadow:inset 4px 0 0 #16a34a;border-radius:8px}
+.recv-item-row.recv-confirmed .item-name{color:#14532d;font-weight:700}
+.recv-confirm-btn{flex-shrink:0;min-width:0;max-width:120px;padding:6px 10px;border-radius:8px;gap:1px;border-width:1.5px}
+.recv-confirm-btn .order-ack-title{font-size:11px;font-weight:800;letter-spacing:.02em;line-height:1.1}
+.recv-confirm-btn .order-ack-sub{font-size:8px;max-width:108px;line-height:1.15}
+.recv-confirm-btn svg{width:14px;height:14px}
 /* Progress bar */
 .prog{height:3px;background:#f3f4f6;border-radius:2px;margin-bottom:10px;overflow:hidden}
 .prog-fill{height:100%;background:var(--ck-red);border-radius:2px;transition:width .3s}
@@ -1475,12 +1483,24 @@ const db = {
     if(error) throw error;
   },
 
-  async confirmReceipt(orderId, receivedMap, lineItems){
+  async confirmReceipt(orderId, receivedMap, lineItems, opts={}){
     const receivedAt=new Date().toISOString();
-    let oq=sb.from('ck_orders').update({status:'received',received_at:receivedAt}).eq('id',orderId);
+    const orderNotes=opts&&opts.orderNotes!=null ? String(opts.orderNotes).trim() : '';
+    const confirmedMap=opts&&opts.confirmedMap&&typeof opts.confirmedMap==='object'&&!Array.isArray(opts.confirmedMap)
+      ? opts.confirmedMap
+      : {};
+    const baseUpdate={status:'received',received_at:receivedAt};
+    const extendedUpdate={...baseUpdate,order_notes:orderNotes,confirmed_map:confirmedMap};
+    let oq=sb.from('ck_orders').update(extendedUpdate).eq('id',orderId);
     oq=scopeByStore(oq);
-    const {error:oe} = await oq;
-    if(oe) throw oe;
+    let {error:oe} = await oq;
+    if(oe){
+      // Backward compatibility for databases that haven't added optional receipt note/map columns yet.
+      let fallbackQ=sb.from('ck_orders').update(baseUpdate).eq('id',orderId);
+      fallbackQ=scopeByStore(fallbackQ);
+      const {error:fallbackErr}=await fallbackQ;
+      if(fallbackErr) throw fallbackErr;
+    }
     const lines=lineItems&&typeof lineItems==='object'?lineItems:{};
     const entries=Object.entries(lines);
     if(!entries.length) return;
@@ -2383,6 +2403,51 @@ function clearOrderRecExcludedForSession(sessionId){
   if(!m[sessionId]) return;
   delete m[sessionId];
   ls.set(LS_ORDER_REC_EXCLUDED,m);
+}
+
+function normalizeOrderReceiptData(order){
+  if(!order||typeof order!=='object') return;
+  if(!order.items||typeof order.items!=='object') order.items={};
+  const rawNotes=order.order_notes;
+  order.order_notes=rawNotes==null?'':String(rawNotes);
+  const rawMap=order.confirmed_map;
+  const normalizedMap={};
+  if(rawMap&&typeof rawMap==='object'&&!Array.isArray(rawMap)){
+    Object.entries(rawMap).forEach(([k,v])=>{
+      if(v) normalizedMap[String(k)]=true;
+    });
+  }
+  order.confirmed_map=normalizedMap;
+}
+
+function normalizeOrderReceiptMap(order){
+  if(!order||typeof order!=='object') return {};
+  normalizeOrderReceiptData(order);
+  return order.confirmed_map;
+}
+
+function normalizeOrdersForReceiptData(orders){
+  const arr=Array.isArray(orders)?orders:[];
+  arr.forEach(normalizeOrderReceiptData);
+  return arr;
+}
+
+function getReceiveConfirmFlags(order){
+  return {...normalizeOrderReceiptMap(order)};
+}
+
+function toggleReceiveConfirm(orderId,itemId){
+  const order=S.orders.find(o=>o.id===orderId&&o.status==='pending');
+  if(!order||!itemId) return;
+  if(!order.items||!Object.prototype.hasOwnProperty.call(order.items,itemId)) return;
+  normalizeOrderReceiptData(order);
+  const cur=getReceiveConfirmFlags(order);
+  const next={...cur};
+  if(next[itemId]) delete next[itemId];
+  else next[itemId]=true;
+  order.confirmed_map=next;
+  ls.set('orders',S.orders);
+  render();
 }
 
 // ─── ORDER TAB HELPERS (ack toggles + list/walk) ─────────────────────────────
@@ -3540,6 +3605,8 @@ function renderReceive(){
   if(!pending.length) return h+`<div class="empty">No pending orders. Place an order from the Order tab first.</div>`;
 
   const order = pending[0];
+  normalizeOrderReceiptData(order);
+  const confirmFlags=getReceiveConfirmFlags(order);
   if(pending.length>1){
     h+=`<div class="banner banner-warn" style="margin-bottom:7px">${pending.length} pending orders on file. This screen shows the <strong>most recent</strong> (${fmtDateTime(order.ordered_at)}). Delete it below if it was logged by mistake, then the next one will appear here.</div>`;
   }
@@ -3554,16 +3621,18 @@ function renderReceive(){
   origLines.forEach(([itemId,data])=>{
     const item = S.items.find(i=>i.id===itemId);
     if(!item) return;
+    const confirmed=!!confirmFlags[itemId];
     const recN=parseFloat(data&&data.recommended);
     const recDisp=Number.isFinite(recN)?recN:0;
-    h+=`<div class="item-row">
+    h+=`<div class="item-row recv-item-row${confirmed?' recv-confirmed':''}">
       <div>
         <div class="item-name">${escapeHtml(item.name)}</div>
         <div class="item-meta">Ordered: <span style="color:var(--ck-red);font-weight:600">${recDisp}</span> ${escapeHtml(itemOrderUnitLabel(item))}</div>
       </div>
-      <div style="display:flex;align-items:center">
+      <div style="display:flex;align-items:center;gap:8px">
         <input class="qinput" type="number" min="0" step="0.5" id="recv-${itemId}" placeholder="${recDisp}">
         <span class="ulbl">${escapeHtml(itemOrderUnitLabel(item))}</span>
+        <button type="button" class="order-ack-btn order-ack-btn-list recv-confirm-btn${confirmed?' on':' order-ack-btn-pending'}" aria-pressed="${confirmed?'true':'false'}" aria-label="${confirmed?'Confirmed as received':'Tap to confirm this line item was received'}" onclick="toggleReceiveConfirm('${order.id}',JSON.parse(decodeURIComponent('${encAttr(itemId)}')))">${confirmed?'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>':''}<span class="order-ack-title">Confirmed</span><span class="order-ack-sub">${confirmed?'Checked in truck':'Tap when checked'}</span></button>
       </div>
     </div>`;
   });
@@ -3606,6 +3675,14 @@ function renderReceive(){
     h+=`<div style="padding:8px 10px 10px;font-size:11px;color:#9ca3af;border-top:1px solid #f4f4f5">No more items to add from your catalog.</div>`;
   }
   h+='</div>';
+
+  const notesVal=escapeHtml(order.order_notes||'');
+  h+=`<div class="card" style="margin-top:8px">
+    <div class="card-hdr-static"><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Receipt notes</span></div>
+    <div style="padding:8px 10px">
+      <textarea id="recv-notes-input" class="finput recv-notes" placeholder="Optional note about shortages, substitutions, damages, etc.">${notesVal}</textarea>
+    </div>
+  </div>`;
 
   h+=`<div class="sticky-footer">
     <div class="sticky-footer-row between" style="flex-wrap:wrap;gap:8px">
@@ -4333,17 +4410,23 @@ async function confirmReceive(orderId){
   if(isAppBusy()) return;
   const order=S.orders.find(o=>o.id===orderId);
   if(!order) return;
+  normalizeOrderReceiptData(order);
   const CK=window.__CK_LOGIC;
   const receivedMap=CK.buildReceivedQuantitiesMap(order.items, id=>{
     const inp=document.getElementById('recv-'+id);
     return inp?inp.value:null;
   });
+  const notesEl=document.getElementById('recv-notes-input');
+  const orderNotes=notesEl?String(notesEl.value||'').trim():'';
+  const confirmedMap={...getReceiveConfirmFlags(order)};
   let ok=false;
   try{
     setSyncing(true,'Confirming receipt…');
-    await db.confirmReceipt(orderId,receivedMap,order.items);
+    await db.confirmReceipt(orderId,receivedMap,order.items,{orderNotes,confirmedMap});
     order.status='received';
     order.received_at=new Date().toISOString();
+    order.order_notes=orderNotes;
+    order.confirmed_map=confirmedMap;
     Object.entries(receivedMap).forEach(([id,v])=>{ if(order.items[id]) order.items[id].received=v; });
     ls.set('orders',S.orders);
     setSyncOk();
@@ -5024,7 +5107,7 @@ async function loadFromDB(){
       S.items = normalizeItemsForOrderMath(items);
     }
     S.sessions = sessions;
-    S.orders = orders;
+    S.orders = normalizeOrdersForReceiptData(orders||[]);
     if(draftSession){
       setCountDraftSessionState(draftSession,{promptOnResume:S.tab==='count'});
     }else{
@@ -5070,7 +5153,7 @@ function loadFromCache(){
   const items = ls.get('items');
   S.items = normalizeItemsForOrderMath(items||scopedSeedItems());
   S.sessions = ls.get('sessions')||[];
-  S.orders = ls.get('orders')||[];
+  S.orders = normalizeOrdersForReceiptData(ls.get('orders')||[]);
   const cachedDraft=readCountDraftCache();
   if(cachedDraft){
     setCountDraftSessionState(cachedDraft,{promptOnResume:S.tab==='count'});

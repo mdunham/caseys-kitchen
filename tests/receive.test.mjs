@@ -23,4 +23,9 @@ describe('Receive / receipt quantities', () => {
     const m = buildReceivedQuantitiesMap({ a: { recommended: 9 } }, (id) => (id === 'a' ? '3.5' : ''));
     expect(m.a).toBe(3.5);
   });
+
+  it('supports empty line-items map safely', () => {
+    const m = buildReceivedQuantitiesMap(null, () => '3');
+    expect(m).toEqual({});
+  });
 });
