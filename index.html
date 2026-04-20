@@ -2296,6 +2296,22 @@ function initialParFlat(){
   return flattenWalkItems(getOrderedGroups(S.items));
 }
 
+function initialSetupDraftEntry(item,rawDraft){
+  const rawPar=item&&item.par!=null?String(item.par):'';
+  const parFallback=rawPar.trim();
+  const triggerRaw=item&&item.reorder_trigger!=null?String(item.reorder_trigger):'';
+  const triggerFallback=triggerRaw.trim();
+  if(rawDraft&&typeof rawDraft==='object'&&!Array.isArray(rawDraft)){
+    const parVal=rawDraft.par!=null?String(rawDraft.par):'';
+    const trigVal=rawDraft.trigger!=null?String(rawDraft.trigger):(rawDraft.reorder_trigger!=null?String(rawDraft.reorder_trigger):'');
+    return {par:parVal.trim(),trigger:trigVal.trim()};
+  }
+  if(rawDraft!==undefined&&rawDraft!==null){
+    return {par:String(rawDraft).trim(),trigger:triggerFallback};
+  }
+  return {par:parFallback,trigger:triggerFallback};
+}
+
 function needsInitialParSetup(status=S.itemsStatus, items=S.items){
   if(!S.dbSupportsStoreScope) return false;
   if(ACTIVE_STORE.id===TEMPLATE_STORE_ID) return false;
@@ -2319,14 +2335,9 @@ function startInitialParSetup(opts={}){
   const keepDraft=opts&&opts.keepDraft===true;
   const baseDraft=keepDraft?S.initialSetupParDraft:{};
   const mergedDraft={...baseDraft,...incomingDraft};
-  if(status&&status.pending&&status.parSetupDone!==true){
-    flat.forEach(item=>{
-      if(mergedDraft[item.id]===undefined){
-        const n=parseFloat(item.par);
-        mergedDraft[item.id]=Number.isFinite(n)?String(n):'';
-      }
-    });
-  }
+  flat.forEach(item=>{
+    mergedDraft[item.id]=initialSetupDraftEntry(item,mergedDraft[item.id]);
+  });
   S.initialSetupActive=true;
   S.initialSetupParDraft=mergedDraft;
   const rawIx=opts&&Number.isFinite(opts.startIndex)?opts.startIndex:0;
@@ -2337,19 +2348,39 @@ function startInitialParSetup(opts={}){
 }
 
 function setInitialParDraft(itemId,val){
-  S.initialSetupParDraft[itemId]=val;
+  const item=S.items.find(i=>i.id===itemId);
+  const cur=initialSetupDraftEntry(item,S.initialSetupParDraft[itemId]);
+  S.initialSetupParDraft[itemId]={...cur,par:String(val??'')};
 }
 
-function initialParQtyKey(ev){
-  if(ev.key==='Enter'&&!ev.shiftKey){
+function setInitialTriggerDraft(itemId,val){
+  const item=S.items.find(i=>i.id===itemId);
+  const cur=initialSetupDraftEntry(item,S.initialSetupParDraft[itemId]);
+  S.initialSetupParDraft[itemId]={...cur,trigger:String(val??'')};
+}
+
+function focusInitialTriggerInput(){
+  const q=document.getElementById('initial-trigger-input');
+  if(!q) return;
+  requestAnimationFrame(()=>{
+    try{ q.focus(); q.select(); }catch{}
+  });
+}
+
+function initialParQtyKey(ev,field='par'){
+  if(field==='par'&&ev.key==='Enter'&&!ev.shiftKey){
+    ev.preventDefault();
+    focusInitialTriggerInput();
+    return;
+  }
+  if(field==='trigger'&&ev.key==='Enter'&&!ev.shiftKey){
     ev.preventDefault();
     void saveInitialParAndMove(1);
     return;
   }
-  if(ev.key==='Tab'){
+  if(field==='trigger'&&ev.key==='Tab'&&!ev.shiftKey){
     ev.preventDefault();
-    if(ev.shiftKey) void saveInitialParAndMove(-1);
-    else void saveInitialParAndMove(1);
+    void saveInitialParAndMove(1);
   }
 }
 
@@ -2362,18 +2393,28 @@ async function saveInitialParAndMove(delta){
   }
   const idx=Math.max(0,Math.min(S.initialSetupIndex,flat.length-1));
   const item=flat[idx];
-  const raw=S.initialSetupParDraft[item.id];
-  const parsed=parseFloat(raw);
+  const draftEntry=initialSetupDraftEntry(item,S.initialSetupParDraft[item.id]);
+  const parsed=parseFloat(draftEntry.par);
   if(!Number.isFinite(parsed)||parsed<=0){
     alert('Enter a par greater than 0 before moving to the next item.');
     return;
   }
+  const triggerRaw=String(draftEntry.trigger??'').trim();
+  let triggerVal=null;
+  if(triggerRaw!==''){
+    const parsedTrigger=parseFloat(triggerRaw);
+    if(!Number.isFinite(parsedTrigger)||parsedTrigger<0){
+      alert('Minimum count order trigger must be 0 or greater, or leave it blank.');
+      return;
+    }
+    triggerVal=Math.round(parsedTrigger*100)/100;
+  }
   const rounded=Math.round(parsed*100)/100;
-  S.initialSetupParDraft[item.id]=String(rounded);
+  S.initialSetupParDraft[item.id]={par:String(rounded),trigger:triggerVal==null?'':String(triggerVal)};
   const nextItems=[...S.items];
   const itemIx=nextItems.findIndex(i=>i.id===item.id);
   if(itemIx<0) return;
-  nextItems[itemIx]={...nextItems[itemIx],par:rounded};
+  nextItems[itemIx]={...nextItems[itemIx],par:rounded,reorder_trigger:triggerVal};
   S.items=normalizeItemsForOrderMath(nextItems);
   ls.set('items',S.items);
   queueInitialParSave(item.id);
@@ -2443,7 +2484,7 @@ async function flushInitialParSaveQueue(opts={}){
       }
     }catch(e){
       ids.forEach(id=>__initialParQueuedIds.add(id));
-      setSyncErr(e&&e.message?e.message:'Unable to save par levels.');
+      setSyncErr(e&&e.message?e.message:'Unable to save par levels or triggers.');
       render();
       throw e;
     }finally{
@@ -2489,11 +2530,10 @@ function renderInitialParSetup(){
   }
   S.initialSetupIndex=Math.max(0,Math.min(S.initialSetupIndex,flat.length-1));
   const item=flat[S.initialSetupIndex];
-  if(S.initialSetupParDraft[item.id]===undefined){
-    const n=parseFloat(item.par);
-    S.initialSetupParDraft[item.id]=Number.isFinite(n)?String(n):'';
-  }
-  const val=S.initialSetupParDraft[item.id];
+  const draftEntry=initialSetupDraftEntry(item,S.initialSetupParDraft[item.id]);
+  S.initialSetupParDraft[item.id]=draftEntry;
+  const val=draftEntry.par;
+  const triggerVal=draftEntry.trigger;
   const l1=item.cat_l1||'Other';
   const l2=item.cat_l2||'General';
   const pct=Math.round(((S.initialSetupIndex+1)/flat.length)*100);
@@ -2501,29 +2541,32 @@ function renderInitialParSetup(){
   const nextLbl=S.initialSetupIndex>=flat.length-1?'Finish setup':'Save & next';
   return `
   <div class="pg-hdr">
-    <div><div class="pg-title">Initial Store Setup</div><div class="pg-sub">Set par for every item copied from Store 1406</div></div>
+    <div><div class="pg-title">Initial Store Setup</div><div class="pg-sub">Set par and minimum count order trigger for each item</div></div>
     <div style="display:flex;gap:6px;align-items:center">
       <span class="badge">${S.initialSetupIndex+1}/${flat.length}</span>
     </div>
   </div>
   <div class="seg-row" style="margin-bottom:8px">
-    <button type="button" class="seg on" disabled>Par walkthrough</button>
+    <button type="button" class="seg on" disabled>Par + trigger walkthrough</button>
   </div>
   <div class="prog" style="margin-bottom:10px"><div class="prog-fill" style="width:${pct}%"></div></div>
   <div class="card walk-card">
     <div class="walk-breadcrumb">${escapeHtml(l1)} › ${escapeHtml(l2)}</div>
     <div class="walk-name">${escapeHtml(item.name)}</div>
-    <div class="walk-meta">Current par <b style="color:var(--ck-red)">${fmtQty(item.par)}</b> ${escapeHtml(item.unit)} · <span class="mono">${escapeHtml(itemScanMeta(item))}</span></div>
+    <div class="walk-meta">Current par <b style="color:var(--ck-red)">${fmtQty(item.par)}</b> ${escapeHtml(item.unit)} · ${escapeHtml(triggerMetaLabel(item))} · <span class="mono">${escapeHtml(itemScanMeta(item))}</span></div>
     <div class="walk-qty-strip">
       <button type="button" class="walk-float-btn walk-float-prev" onclick="saveInitialParAndMove(-1)" aria-label="Previous item"${prevDisabled}><span class="walk-float-icon" aria-hidden="true">‹</span><span class="walk-float-lbl">Prev</span></button>
       <div class="walk-qty-center">
         <input class="walk-qty" id="initial-par-input" type="number" min="0.5" step="0.5" value="${escapeHtml(val)}" placeholder="Par" inputmode="decimal"
-          oninput="setInitialParDraft('${item.id}',this.value)" onkeydown="initialParQtyKey(event)">
-        <div class="ulbl" style="margin-top:4px">${escapeHtml(item.unit)}</div>
+          oninput="setInitialParDraft('${item.id}',this.value)" onkeydown="initialParQtyKey(event,'par')">
+        <div class="ulbl" style="margin-top:4px">Par (${escapeHtml(item.unit)})</div>
+        <input class="walk-qty" id="initial-trigger-input" type="number" min="0" step="0.5" value="${escapeHtml(triggerVal)}" placeholder="Min count trigger (optional)" inputmode="decimal" style="margin-top:8px;font-size:20px;padding:9px 10px"
+          oninput="setInitialTriggerDraft('${item.id}',this.value)" onkeydown="initialParQtyKey(event,'trigger')">
+        <div class="ulbl" style="margin-top:4px">Order only when on-hand is at or below this ${escapeHtml(item.unit)} count</div>
       </div>
       <button type="button" class="walk-float-btn walk-float-next" onclick="saveInitialParAndMove(1)" aria-label="Save and next item"><span class="walk-float-icon" aria-hidden="true">›</span><span class="walk-float-lbl">${nextLbl}</span></button>
     </div>
-    <div class="item-meta" style="text-align:center">Enter the store par for this item, then continue.</div>
+    <div class="item-meta" style="text-align:center">Enter par and optional minimum count trigger, then continue.</div>
   </div>
   <div class="sticky-footer">
     <div class="sticky-footer-row between">
