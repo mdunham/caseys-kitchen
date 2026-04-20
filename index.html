@@ -702,6 +702,8 @@ try { sb = supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn('Sup
 const S = {
   items: [], sessions: [], orders: [],
   draft: {}, expanded: {},
+  countDraftSession: null,
+  countDraftPrompt: false,
   tab: 'count',
   historyMode: false,
   editSessionId: null,
@@ -709,6 +711,7 @@ const S = {
   formView: null, formData: null, editItemId: null,
   syncing: false, syncError: null, dbReady: false,
   dbSupportsStoreScope: false,
+  dbSupportsSessionDrafts: false,
   dbSupportsBilling: false,
   billingCtx: null,
   featureAccess: {count:true,ordering:true,receive:true,usage:true,source:'legacy'},
@@ -742,9 +745,14 @@ const S = {
   barcodeMode: 'qr',
 };
 const INITIAL_PAR_SAVE_DEBOUNCE_MS = 180;
+const COUNT_DRAFT_SAVE_DEBOUNCE_MS = 240;
+const COUNT_DRAFT_SESSION_KEY = 'countDraftSession';
 let __initialParSaveTimer = null;
 let __initialParSaveInFlight = null;
 const __initialParQueuedIds = new Set();
+let __countDraftSaveTimer = null;
+let __countDraftSaveInFlight = null;
+let __countDraftSaveQueued = false;
 
 function attachStoreScope(row){
   const next={...row};
@@ -766,6 +774,277 @@ const ls = {
   get(k){ try{ const v=localStorage.getItem(LS_PREFIX+k); return v?JSON.parse(v):null; }catch{ return null; }},
   set(k,v){ try{ localStorage.setItem(LS_PREFIX+k,JSON.stringify(v)); }catch{} }
 };
+
+function normalizeSessionStatus(raw){
+  const v=String(raw||'').trim().toLowerCase();
+  return v==='draft' ? 'draft' : 'final';
+}
+
+function normalizeCountDraftMap(raw){
+  const out={};
+  if(!raw||typeof raw!=='object') return out;
+  Object.entries(raw).forEach(([itemId,val])=>{
+    if(itemId==null) return;
+    if(val===undefined||val===null) return;
+    const trimmed=String(val).trim();
+    if(trimmed==='') return;
+    out[String(itemId)]=trimmed;
+  });
+  return out;
+}
+
+function parseDraftSessionNotes(rawNotes){
+  if(rawNotes==null||rawNotes==='') return {counts:{},walkIndex:0,updatedAt:null};
+  let payload=null;
+  if(typeof rawNotes==='object'&&!Array.isArray(rawNotes)) payload=rawNotes;
+  else{
+    try{ payload=JSON.parse(String(rawNotes)); }catch{ payload=null; }
+  }
+  if(!payload||typeof payload!=='object') return {counts:{},walkIndex:0,updatedAt:null};
+  const counts=normalizeCountDraftMap(payload.draftCounts||payload.counts||{});
+  const walkRaw=parseInt(payload.walkIndex,10);
+  const walkIndex=Number.isFinite(walkRaw)&&walkRaw>=0?walkRaw:0;
+  const updatedAt=payload.updated_at?String(payload.updated_at):null;
+  return {counts,walkIndex,updatedAt};
+}
+
+function serializeDraftSessionNotes(counts, walkIndex){
+  return JSON.stringify({
+    draftCounts: normalizeCountDraftMap(counts),
+    walkIndex: Number.isFinite(walkIndex)&&walkIndex>=0 ? walkIndex : 0,
+    updated_at: new Date().toISOString()
+  });
+}
+
+function normalizeDraftSession(raw){
+  if(!raw||typeof raw!=='object') return null;
+  const id=String(raw.id||'').trim();
+  if(!id) return null;
+  const parsed=parseDraftSessionNotes(raw.notes);
+  const counts=normalizeCountDraftMap(raw.counts||parsed.counts||{});
+  const walkRaw=parseInt(raw.walk_index,10);
+  const walkIndex=Number.isFinite(walkRaw)&&walkRaw>=0 ? walkRaw : parsed.walkIndex;
+  return {
+    id,
+    counted_at: raw.counted_at||new Date().toISOString(),
+    status: 'draft',
+    counts,
+    walk_index: Number.isFinite(walkIndex)&&walkIndex>=0 ? walkIndex : 0
+  };
+}
+
+function readCountDraftCache(){
+  return normalizeDraftSession(ls.get(COUNT_DRAFT_SESSION_KEY));
+}
+
+function writeCountDraftCache(draftSession){
+  if(!draftSession){ ls.set(COUNT_DRAFT_SESSION_KEY,null); return; }
+  ls.set(COUNT_DRAFT_SESSION_KEY,{
+    id:draftSession.id,
+    counted_at:draftSession.counted_at,
+    status:'draft',
+    walk_index:Number.isFinite(draftSession.walk_index)?draftSession.walk_index:0,
+    counts:normalizeCountDraftMap(draftSession.counts||{})
+  });
+}
+
+function setCountDraftSessionState(draftSession, opts={}){
+  const normalized=normalizeDraftSession(draftSession);
+  S.countDraftSession=normalized;
+  if(normalized){
+    S.draft={...normalized.counts};
+    if(Number.isFinite(normalized.walk_index)&&normalized.walk_index>=0) S.walkIndex=normalized.walk_index;
+    if(opts.promptOnResume===true) S.countDraftPrompt=true;
+  }else{
+    if(opts.clearDraft!==false){
+      S.draft={};
+      S.walkIndex=0;
+    }
+    S.countDraftPrompt=false;
+  }
+  writeCountDraftCache(normalized);
+}
+
+function hasActiveCountDraft(){
+  return !!(S.countDraftSession&&S.countDraftSession.id);
+}
+
+function ensureCountDraftSession(){
+  if(S.initialSetupActive) return null;
+  if(hasActiveCountDraft()) return S.countDraftSession;
+  const draft=normalizeDraftSession({
+    id: makeEntityId('sess'),
+    counted_at: new Date().toISOString(),
+    status: 'draft',
+    counts: normalizeCountDraftMap(S.draft),
+    walk_index: Number.isFinite(S.walkIndex)&&S.walkIndex>=0 ? S.walkIndex : 0
+  });
+  S.countDraftSession=draft;
+  writeCountDraftCache(draft);
+  return draft;
+}
+
+function countDraftProgress(){
+  const total=S.items.length;
+  const draft=S.draft||{};
+  let counted=0;
+  S.items.forEach(item=>{
+    const val=draft[item.id];
+    if(val!==undefined&&String(val).trim()!=='') counted++;
+  });
+  return {counted,total};
+}
+
+function refreshCountDraftSessionFromState(){
+  if(!hasActiveCountDraft()) return null;
+  const next=normalizeDraftSession({
+    ...S.countDraftSession,
+    status:'draft',
+    counts:normalizeCountDraftMap(S.draft),
+    walk_index:Number.isFinite(S.walkIndex)&&S.walkIndex>=0 ? S.walkIndex : 0
+  });
+  S.countDraftSession=next;
+  writeCountDraftCache(next);
+  return next;
+}
+
+async function flushCountDraftSaveQueue(opts={}){
+  const waitForInFlight=opts&&opts.waitForInFlight===true;
+  if(__countDraftSaveTimer){
+    clearTimeout(__countDraftSaveTimer);
+    __countDraftSaveTimer=null;
+  }
+  if(__countDraftSaveInFlight){
+    if(waitForInFlight){
+      await __countDraftSaveInFlight;
+      if(__countDraftSaveQueued) return flushCountDraftSaveQueue(opts);
+    }
+    return;
+  }
+  if(!__countDraftSaveQueued) return;
+  const draft=refreshCountDraftSessionFromState();
+  __countDraftSaveQueued=false;
+  if(!draft) return;
+  const payload={
+    id:draft.id,
+    counted_at:draft.counted_at||new Date().toISOString(),
+    counts:normalizeCountDraftMap(S.draft),
+    walk_index:Number.isFinite(S.walkIndex)&&S.walkIndex>=0 ? S.walkIndex : 0
+  };
+  const savePromise=(async()=>{
+    try{
+      if(sb&&S.dbReady&&S.dbSupportsSessionDrafts){
+        await db.saveDraftSession(payload.id,payload.counted_at,payload.counts,payload.walk_index);
+        if(!S.syncing&&!S.progressOnly&&S.syncError){
+          setSyncOk();
+          render();
+        }
+      }
+    }catch(e){
+      setSyncErr((e&&e.message?e.message:'Unable to save in-progress count.')+' Draft is still saved on this device.');
+      render();
+    }finally{
+      __countDraftSaveInFlight=null;
+      if(__countDraftSaveQueued&&!waitForInFlight){
+        __countDraftSaveTimer=setTimeout(()=>{
+          __countDraftSaveTimer=null;
+          void flushCountDraftSaveQueue();
+        },COUNT_DRAFT_SAVE_DEBOUNCE_MS);
+      }
+    }
+  })();
+  __countDraftSaveInFlight=savePromise;
+  if(waitForInFlight){
+    await savePromise;
+    if(__countDraftSaveQueued) await flushCountDraftSaveQueue(opts);
+  }
+}
+
+function queueCountDraftSave(opts={}){
+  if(S.initialSetupActive) return;
+  ensureCountDraftSession();
+  if(!hasActiveCountDraft()) return;
+  refreshCountDraftSessionFromState();
+  __countDraftSaveQueued=true;
+  const immediate=opts&&opts.immediate===true;
+  if(__countDraftSaveTimer){
+    clearTimeout(__countDraftSaveTimer);
+    __countDraftSaveTimer=null;
+  }
+  if(immediate){
+    void flushCountDraftSaveQueue();
+    return;
+  }
+  __countDraftSaveTimer=setTimeout(()=>{
+    __countDraftSaveTimer=null;
+    void flushCountDraftSaveQueue();
+  },COUNT_DRAFT_SAVE_DEBOUNCE_MS);
+}
+
+async function persistCountDraftNow(){
+  queueCountDraftSave({immediate:true});
+  await flushCountDraftSaveQueue({waitForInFlight:true});
+}
+
+async function deleteCountDraftSessionAndReset(){
+  const sid=S.countDraftSession&&S.countDraftSession.id?S.countDraftSession.id:null;
+  if(__countDraftSaveTimer){
+    clearTimeout(__countDraftSaveTimer);
+    __countDraftSaveTimer=null;
+  }
+  __countDraftSaveQueued=false;
+  if(sid&&sb&&S.dbReady&&S.dbSupportsSessionDrafts){
+    await db.deleteDraftSession(sid);
+  }
+  setCountDraftSessionState(null,{clearDraft:true});
+  clearOrderManualAdj();
+  S.countManualOrderOpen=false;
+  syncCountFormAvailability();
+}
+
+function continueCountDraftSession(){
+  if(!hasActiveCountDraft()){
+    S.countDraftPrompt=false;
+    render();
+    return;
+  }
+  S.historyMode=false;
+  S.countFormActive=true;
+  S.countDraftPrompt=false;
+  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  if(flat.length){
+    S.countView='walk';
+    S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
+  }else{
+    S.countView='list';
+  }
+  render();
+  if(S.countView==='walk') queueWalkFocus();
+}
+
+function dismissCountDraftPrompt(){
+  if(S.countDraftPrompt!==true) return;
+  S.countDraftPrompt=false;
+  render();
+}
+
+async function confirmDeleteCountDraftAndRestart(){
+  if(!hasActiveCountDraft()){
+    startNewCountSession({force:true});
+    return;
+  }
+  if(!confirm('Delete this in-progress count and start over? Any unsaved progress from this draft will be removed.')) return;
+  if(isAppBusy()) return;
+  try{
+    setSyncing(true,'Deleting in-progress count…');
+    await deleteCountDraftSessionAndReset();
+    setSyncOk();
+    startNewCountSession({force:true});
+  }catch(e){
+    setSyncErr(e&&e.message?e.message:'Unable to delete in-progress count.');
+    render();
+  }
+}
 
 function readInitialSetupStatus(){
   const raw=ls.get(INITIAL_SETUP_STATUS_KEY);
@@ -846,6 +1125,12 @@ const db = {
       }catch{
         S.dbSupportsBilling=false;
       }
+      try{
+        const {error:sessionDraftErr} = await sb.from('ck_sessions').select('status').limit(1);
+        S.dbSupportsSessionDrafts=!sessionDraftErr;
+      }catch{
+        S.dbSupportsSessionDrafts=false;
+      }
       return true;
     }catch{ return false; }
   },
@@ -890,9 +1175,20 @@ const db = {
       if(oieErr) throw oieErr;
       oitems=oie||[];
     }
+    const normalizedSessions=CK.denormalizeSessions(sessArr,counts);
+    let finalSessions=normalizedSessions;
+    let draftSession=null;
+    if(S.dbSupportsSessionDrafts){
+      const drafts=normalizedSessions
+        .filter(s=>normalizeSessionStatus(s&&s.status)==='draft')
+        .sort((a,b)=>new Date(b.counted_at)-new Date(a.counted_at));
+      draftSession=drafts.length?normalizeDraftSession(drafts[0]):null;
+      finalSessions=normalizedSessions.filter(s=>normalizeSessionStatus(s&&s.status)!=='draft');
+    }
     return {
       items: items||[],
-      sessions: CK.denormalizeSessions(sessArr,counts),
+      sessions: finalSessions,
+      draftSession,
       orders: CK.denormalizeOrders(ordArr,oitems)
     };
   },
@@ -1110,8 +1406,11 @@ const db = {
     if(error) throw error;
   },
 
-  async saveSession(sessionId, countedAt, counts){
-    const row=attachStoreScope({id:sessionId,counted_at:countedAt});
+  async saveSession(sessionId, countedAt, counts, opts={}){
+    const status=normalizeSessionStatus(opts&&opts.status);
+    const notes=opts&&opts.notes!=null ? String(opts.notes) : '';
+    const row=attachStoreScope({id:sessionId,counted_at:countedAt,notes});
+    if(S.dbSupportsSessionDrafts) row.status=status;
     const {error:se} = await sb.from('ck_sessions').upsert(row,{onConflict:'id'});
     if(se) throw se;
     const ts = new Date().toISOString();
@@ -1122,6 +1421,17 @@ const db = {
       const {error:ce} = await sb.from('ck_counts').upsert(rows,{onConflict:'session_id,item_id'});
       if(ce) throw ce;
     }
+  },
+
+  async saveDraftSession(sessionId, countedAt, counts, walkIndex){
+    if(!S.dbSupportsSessionDrafts) return;
+    const notes=serializeDraftSessionNotes(counts,walkIndex);
+    await db.saveSession(sessionId,countedAt,counts,{status:'draft',notes});
+  },
+
+  async deleteDraftSession(sessionId){
+    if(!sessionId) return;
+    await db.deleteSession(sessionId);
   },
 
   async updateSessionCounts(sessionId, counts){
@@ -2221,35 +2531,61 @@ function toggleCountManualOrder(){
 }
 
 function setCountView(mode){
+  if(S.countDraftPrompt){
+    dismissCountDraftPrompt();
+    return;
+  }
   S.countView=mode;
   if(mode==='walk'){
     const flat=flattenWalkItems(getOrderedGroups(S.items));
     if(!flat.length){ S.countView='list'; render(); return; }
     S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
+    queueCountDraftSave();
   }
   render();
   if(mode==='walk') queueWalkFocus();
 }
 
 function enterWalkCount(clearDraft){
-  if(clearDraft){ S.draft={}; S.walkIndex=0; clearOrderManualAdj(); S.countManualOrderOpen=false; }
+  if(clearDraft){
+    S.draft={};
+    S.walkIndex=0;
+    clearOrderManualAdj();
+    S.countManualOrderOpen=false;
+    setCountDraftSessionState(null,{clearDraft:true});
+  }
   const flat=flattenWalkItems(getOrderedGroups(S.items));
   if(!flat.length){ alert('No items to count.'); return; }
   S.countView='walk';
   S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
+  if(!clearDraft&&hasActiveCountDraft()) queueCountDraftSave();
   render();
   queueWalkFocus();
 }
 
 /** Main count tab: unlock form and open walk-through from the first item */
-function startNewCountSession(){
+function startNewCountSession(opts={}){
+  const force=opts&&opts.force===true;
+  if(!force&&hasActiveCountDraft()){
+    S.countFormActive=true;
+    S.countDraftPrompt=true;
+    S.historyMode=false;
+    S.editSessionId=null;
+    S.editDraft={};
+    S.countView='list';
+    render();
+    return;
+  }
   S.historyMode=false;
   S.editSessionId=null;
   S.editDraft={};
   const flat=flattenWalkItems(getOrderedGroups(S.items));
   if(!flat.length){ alert('No items to count.'); return; }
   S.countFormActive=true;
+  S.countDraftPrompt=false;
   enterWalkCount(true);
+  ensureCountDraftSession();
+  queueCountDraftSave({immediate:true});
 }
 
 function queueWalkFocus(){
@@ -2265,6 +2601,7 @@ function walkGo(delta){
   const f=walkFlat();
   if(!f.length) return;
   S.walkIndex=Math.max(0,Math.min(f.length-1,S.walkIndex+delta));
+  queueCountDraftSave();
   render();
   queueWalkFocus();
 }
@@ -2272,7 +2609,12 @@ function walkGo(delta){
 function walkPickL1(l1){
   const f=walkFlat();
   const i=f.findIndex(it=>(it.cat_l1||'Other')===l1);
-  if(i>=0){ S.walkIndex=i; render(); queueWalkFocus(); }
+  if(i>=0){
+    S.walkIndex=i;
+    queueCountDraftSave();
+    render();
+    queueWalkFocus();
+  }
 }
 
 function walkPickL2(l2){
@@ -2280,7 +2622,12 @@ function walkPickL2(l2){
   const sels=document.querySelectorAll('.walk-selects select');
   const l1=sels[0]?sels[0].value:(f[S.walkIndex]?(f[S.walkIndex].cat_l1||'Other'):'Other');
   const i=f.findIndex(it=>(it.cat_l1||'Other')===l1&&(it.cat_l2||'General')===l2);
-  if(i>=0){ S.walkIndex=i; render(); queueWalkFocus(); }
+  if(i>=0){
+    S.walkIndex=i;
+    queueCountDraftSave();
+    render();
+    queueWalkFocus();
+  }
 }
 
 function walkQtyKey(ev){
@@ -2612,6 +2959,7 @@ function renderCount(){
   const groups=getOrderedGroups(items);
   const lastSess = S.sessions[0];
   const formLocked=!S.countFormActive;
+  const showResumePrompt=!!(S.countDraftPrompt&&hasActiveCountDraft());
   let h=`
   <div class="pg-hdr">
     <div><div class="pg-title">Inventory Count</div><div class="pg-sub">${lastSess?'Last: '+fmtDate(lastSess.counted_at):'No previous counts'}</div></div>
@@ -2763,6 +3111,17 @@ function renderCount(){
         <div class="count-form-lock-sub">This screen only appears until your <b>first</b> inventory is saved. After that, the count form stays open here automatically. When you start, you can step through items or use <b>Full list</b>.</div>
         <button type="button" class="btn btn-primary" style="width:100%" onclick="startNewCountSession()">Start new count</button>
         <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="goToCountHistory()">Previous counts</button>
+      </div>
+    </div>`;
+  }
+  if(showResumePrompt){
+    const draftProgress=countDraftProgress();
+    h+=`<div class="count-form-lock" role="dialog" aria-modal="true" aria-labelledby="count-resume-title">
+      <div class="count-form-lock-card">
+        <div class="count-form-lock-title" id="count-resume-title">A count is already in progress.</div>
+        <div class="count-form-lock-sub">You have a saved draft with <b>${draftProgress.counted}/${draftProgress.total}</b> items counted. Continue where you left off or delete this draft and start over.</div>
+        <button type="button" class="btn btn-primary" style="width:100%" onclick="continueCountDraftSession()">Continue where I left off</button>
+        <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="confirmDeleteCountDraftAndRestart()">Delete and start over</button>
       </div>
     </div>`;
   }
@@ -3723,6 +4082,7 @@ async function loadCkLogic(){
 function applyRouteFromHash(){
   if(__ckUrlApplying||!window.__CK_LOGIC) return;
   const CK=window.__CK_LOGIC;
+  const prevTab=S.tab;
   __ckUrlApplying=true;
   try{
     const {tab,sub}=CK.parseRouteHash(location.hash);
@@ -3753,6 +4113,8 @@ function applyRouteFromHash(){
     document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
     const tb=document.getElementById('t-'+S.tab); if(tb) tb.classList.add('on');
     syncCountFormAvailability();
+    if(prevTab!=='count'&&S.tab==='count'&&hasActiveCountDraft()) S.countDraftPrompt=true;
+    if(prevTab==='count'&&S.tab!=='count') dismissCountDraftPrompt();
   }finally{
     __ckUrlApplying=false;
   }
@@ -3785,7 +4147,12 @@ function setTab(t){
   S.tab=t; S.historyMode=false; S.editSessionId=null;
   if(t!=='count'){ S.countView='list'; }
   if(t!=='order'){ S.orderView='list'; }
-  if(t==='count') syncCountFormAvailability();
+  if(t==='count'){
+    syncCountFormAvailability();
+    if(hasActiveCountDraft()) S.countDraftPrompt=true;
+  }else{
+    dismissCountDraftPrompt();
+  }
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
   const tb=document.getElementById('t-'+t); if(tb) tb.classList.add('on');
   render();
@@ -3799,6 +4166,7 @@ function setDraft(id,val){
     return;
   }
   S.draft[id]=val;
+  queueCountDraftSave();
   const items=S.items, d=S.draft;
   const counted=items.filter(i=>d[i.id]!==undefined&&d[i.id]!=='').length;
   const pct=items.length?Math.round(counted/items.length*100):0;
@@ -3814,6 +4182,7 @@ function setEditDraft(id,val){ S.editDraft[id]=val; }
 
 /** From the new-count lock modal: open Count History without toggling off if already on */
 function goToCountHistory(){
+  dismissCountDraftPrompt();
   S.historyMode=true;
   S.editSessionId=null;
   S.editDraft={};
@@ -3822,6 +4191,7 @@ function goToCountHistory(){
 }
 
 function toggleHistory(){
+  dismissCountDraftPrompt();
   S.historyMode=!S.historyMode;
   S.editSessionId=null;
   S.editDraft={};
@@ -3886,19 +4256,21 @@ async function deleteSession(sessionId){
 
 async function completeInventory(){
   if(isAppBusy()) return;
-  const id = makeEntityId('sess');
+  const activeDraft=hasActiveCountDraft()?S.countDraftSession:null;
+  const id = activeDraft&&activeDraft.id ? activeDraft.id : makeEntityId('sess');
   const countedAt = new Date().toISOString();
   const counts = {};
   S.items.forEach(i=>{ counts[i.id]=parseFloat(S.draft[i.id])||0; });
-  const sess = {id,counted_at:countedAt,notes:'',counts};
+  const sess = {id,counted_at:countedAt,notes:'',status:'final',counts};
   try{
     setSyncing(true,'Saving inventory…');
-    await db.saveSession(id,countedAt,counts);
+    await db.saveSession(id,countedAt,counts,{status:'final',notes:''});
     S.sessions.unshift(sess);
     ls.set('sessions',S.sessions);
+    setCountDraftSessionState(null,{clearDraft:true});
     setSyncOk();
-    S.draft={};
     S.countView='list';
+    S.countDraftPrompt=false;
     S.countManualOrderOpen=false;
     syncCountFormAvailability();
     showBanner('Inventory saved — '+S.items.length+' items recorded!','ok');
@@ -3906,9 +4278,10 @@ async function completeInventory(){
   }catch(e){
     S.sessions.unshift(sess);
     ls.set('sessions',S.sessions);
+    setCountDraftSessionState(null,{clearDraft:true});
     setSyncErr(e.message);
-    S.draft={};
     S.countView='list';
+    S.countDraftPrompt=false;
     S.countManualOrderOpen=false;
     syncCountFormAvailability();
     render();
@@ -4617,6 +4990,10 @@ function syncCountFormAvailability(){
     S.countFormActive=false;
     return;
   }
+  if(hasActiveCountDraft()){
+    S.countFormActive=true;
+    return;
+  }
   if(S.sessions&&S.sessions.length>0) S.countFormActive=true;
   else S.countFormActive=false;
 }
@@ -4632,7 +5009,7 @@ async function loadFromDB(){
       return;
     }
     S.dbReady=true;
-    const {items,sessions,orders} = await db.loadAll();
+    const {items,sessions,orders,draftSession} = await db.loadAll();
     if(!items.length){
       const seeded=await db.seedItems();
       S.items = normalizeItemsForOrderMath(seeded.rows||[]);
@@ -4648,6 +5025,16 @@ async function loadFromDB(){
     }
     S.sessions = sessions;
     S.orders = orders;
+    if(draftSession){
+      setCountDraftSessionState(draftSession,{promptOnResume:S.tab==='count'});
+    }else{
+      const cachedDraft=readCountDraftCache();
+      if(cachedDraft){
+        setCountDraftSessionState(cachedDraft,{promptOnResume:S.tab==='count'});
+      }else{
+        setCountDraftSessionState(null,{clearDraft:true});
+      }
+    }
     ls.set('items',S.items);
     ls.set('sessions',S.sessions);
     ls.set('orders',S.orders);
@@ -4684,6 +5071,12 @@ function loadFromCache(){
   S.items = normalizeItemsForOrderMath(items||scopedSeedItems());
   S.sessions = ls.get('sessions')||[];
   S.orders = ls.get('orders')||[];
+  const cachedDraft=readCountDraftCache();
+  if(cachedDraft){
+    setCountDraftSessionState(cachedDraft,{promptOnResume:S.tab==='count'});
+  }else{
+    setCountDraftSessionState(null,{clearDraft:true});
+  }
   updateFeatureAccessFromSnapshot(null);
   const setupStatus=readInitialSetupStatus();
   if(needsInitialParSetup(setupStatus,S.items)){
