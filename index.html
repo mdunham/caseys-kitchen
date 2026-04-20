@@ -21,6 +21,23 @@
   --ck-red-soft:#FFF0F1;
   --ck-page:#f6f6f7;
   --ck-line:#e8e8ea;
+  --ck-text:#111;
+  --ck-text-muted:#6b7280;
+  --ck-text-soft:#9ca3af;
+  --ck-surface:#fff;
+  --ck-surface-soft:#f9fafb;
+  --ck-space-1:4px;
+  --ck-space-2:8px;
+  --ck-space-3:10px;
+  --ck-space-4:12px;
+  --ck-space-5:16px;
+  --ck-radius-sm:6px;
+  --ck-radius-md:8px;
+  --ck-radius-lg:10px;
+  --ck-font-xs:10px;
+  --ck-font-sm:11px;
+  --ck-font-md:12px;
+  --ck-font-lg:13px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overscroll-behavior:none}
@@ -258,6 +275,34 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 .t-fail{background:#fee2e2;color:#991b1b}
 .t-skip{background:#f3f4f6;color:#6b7280}
 .t-run{background:#dbeafe;color:#1e40af}
+.u-full{width:100%}
+.u-mt-4{margin-top:4px}
+.u-mt-8{margin-top:8px}
+.u-mt-10{margin-top:10px}
+.u-mb-6{margin-bottom:6px}
+.u-mb-7{margin-bottom:7px}
+.u-mb-8{margin-bottom:8px}
+.u-mb-10{margin-bottom:10px}
+.u-pt-10{padding-top:10px}
+.u-gap-6{gap:6px}
+.u-gap-8{gap:8px}
+.u-flex{display:flex}
+.u-flex-wrap{flex-wrap:wrap}
+.u-items-center{align-items:center}
+.u-between{justify-content:space-between}
+.u-end{justify-content:flex-end}
+.u-text-muted{color:var(--ck-text-soft)}
+.u-text-label{font-size:12px;font-weight:600;color:var(--ck-text-muted);text-transform:uppercase;letter-spacing:.07em}
+.u-divider-top{border-top:1px solid #f3f4f6}
+.u-pane-pad{padding:8px 10px}
+.u-note{font-size:11px;color:var(--ck-text-muted);line-height:1.4}
+.u-note-quiet{font-size:11px;color:var(--ck-text-soft)}
+.u-mono-chip{font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block}
+.btn-block{width:100%}
+.btn-stack{margin-top:8px}
+.panel-signup{display:none;margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6}
+.row-inline{display:flex;gap:8px;flex-wrap:wrap}
+.field-stack{margin-bottom:8px}
 /* Help */
 .help-step-list{margin:8px 0 0 18px;display:flex;flex-direction:column;gap:5px;font-size:12px;color:#374151;line-height:1.45}
 .help-step-list li strong{color:#111}
@@ -309,15 +354,15 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
       <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" autofocus aria-label="Store code" onkeydown="if(event.key==='Enter')submitStorePin()" oninput="onStorePinInput()">
       <div id="pin-err" class="pin-err" role="alert"></div>
       <div class="pin-actions">
-        <button type="button" class="btn btn-primary" style="width:100%" onclick="submitStorePin()">Continue</button>
-        <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="toggleStoreSignup(true)">Sign up new store</button>
+        <button type="button" class="btn btn-primary btn-block" onclick="submitStorePin()">Continue</button>
+        <button type="button" class="btn btn-secondary btn-block btn-stack" onclick="toggleStoreSignup(true)">Sign up new store</button>
       </div>
-      <div id="signup-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6">
-        <div class="pin-sub" style="margin-bottom:10px">Create a new store using your Casey's store code.</div>
+      <div id="signup-wrap" class="panel-signup">
+        <div class="pin-sub u-mb-10">Create a new store using your Casey's store code.</div>
         <input id="signup-store-name" class="finput" type="text" placeholder="Store name (e.g. Casey's #2511)" aria-label="Store name" style="margin-bottom:8px">
         <input id="signup-store-code" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="Store code" aria-label="Store code" oninput="onSignupStoreCodeInput()">
         <div id="signup-err" class="pin-err" role="alert"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="row-inline">
           <button type="button" class="btn btn-primary" style="flex:1;min-width:120px" onclick="signupStore()">Create Store</button>
           <button type="button" class="btn btn-secondary" style="flex:1;min-width:120px" onclick="toggleStoreSignup(false)">Cancel</button>
         </div>
@@ -2954,14 +2999,14 @@ function renderInitialParSetup(){
   return `
   <div class="pg-hdr">
     <div><div class="pg-title">Initial Store Setup</div><div class="pg-sub">Set par and minimum count order trigger for each item</div></div>
-    <div style="display:flex;gap:6px;align-items:center">
+    <div class="u-flex u-gap-6 u-items-center">
       <span class="badge">${S.initialSetupIndex+1}/${flat.length}</span>
     </div>
   </div>
-  <div class="seg-row" style="margin-bottom:8px">
+  <div class="seg-row u-mb-8">
     <button type="button" class="seg on" disabled>Par + trigger walkthrough</button>
   </div>
-  <div class="prog" style="margin-bottom:10px"><div class="prog-fill" style="width:${pct}%"></div></div>
+  <div class="prog u-mb-10"><div class="prog-fill" style="width:${pct}%"></div></div>
   <div class="card walk-card">
     <div class="walk-breadcrumb">${escapeHtml(l1)} › ${escapeHtml(l2)}</div>
     <div class="walk-name">${escapeHtml(item.name)}</div>
@@ -2971,10 +3016,10 @@ function renderInitialParSetup(){
       <div class="walk-qty-center">
         <input class="walk-qty" id="initial-par-input" type="number" min="0.5" step="0.5" value="${escapeHtml(val)}" placeholder="Par" inputmode="decimal"
           oninput="setInitialParDraft('${item.id}',this.value)" onkeydown="initialParQtyKey(event,'par')">
-        <div class="ulbl" style="margin-top:4px">Par (${escapeHtml(item.unit)})</div>
+        <div class="ulbl u-mt-4">Par (${escapeHtml(item.unit)})</div>
         <input class="walk-qty" id="initial-trigger-input" type="number" min="0" step="0.5" value="${escapeHtml(triggerVal)}" placeholder="Min count trigger (optional)" inputmode="decimal" style="margin-top:8px;font-size:20px;padding:9px 10px"
           oninput="setInitialTriggerDraft('${item.id}',this.value)" onkeydown="initialParQtyKey(event,'trigger')">
-        <div class="ulbl" style="margin-top:4px">Order only when on-hand is at or below this ${escapeHtml(item.unit)} count</div>
+        <div class="ulbl u-mt-4">Order only when on-hand is at or below this ${escapeHtml(item.unit)} count</div>
       </div>
       <button type="button" class="walk-float-btn walk-float-next" onclick="saveInitialParAndMove(1)" aria-label="Save and next item"><span class="walk-float-icon" aria-hidden="true">›</span><span class="walk-float-lbl">${nextLbl}</span></button>
     </div>
@@ -3028,7 +3073,7 @@ function renderCount(){
   let h=`
   <div class="pg-hdr">
     <div><div class="pg-title">Inventory Count</div><div class="pg-sub">${lastSess?'Last: '+fmtDate(lastSess.counted_at):'No previous counts'}</div></div>
-    <div style="display:flex;gap:6px;align-items:center">
+    <div class="u-flex u-gap-6 u-items-center">
       <span class="badge">${counted}/${items.length}</span>
       ${!formLocked?`<button type="button" class="count-cog-btn${S.countManualOrderOpen?' on':''}" onclick="toggleCountManualOrder()" aria-label="Manual truck order extras" aria-pressed="${S.countManualOrderOpen?'true':'false'}" title="Show or hide manual add to recommended order">
         <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -3044,7 +3089,7 @@ function renderCount(){
   </div>
   <div class="prog"><div class="prog-fill${pct===100?' done':''}" id="prog-fill" style="width:${pct}%"></div></div>`;
 
-  if(S.syncError) h+=`<div class="banner banner-err" style="margin-bottom:7px">⚠ ${S.syncError} — data saved locally.</div>`;
+  if(S.syncError) h+=`<div class="banner banner-err u-mb-7">⚠ ${S.syncError} — data saved locally.</div>`;
 
   if(S.countView==='walk'){
     const flat=flattenWalkItems(groups);
@@ -3074,7 +3119,7 @@ function renderCount(){
           <div class="walk-qty-center">
             <input class="walk-qty" id="walk-qty" type="number" min="0" step="0.5" value="${val}" placeholder="0" inputmode="decimal"
               oninput="setDraft('${item.id}',this.value)" onkeydown="walkQtyKey(event)">
-            <div class="ulbl" style="margin-top:4px">${escapeHtml(item.unit)}</div>
+            <div class="ulbl u-mt-4">${escapeHtml(item.unit)}</div>
           </div>
           <button type="button" class="walk-float-btn walk-float-next" onclick="walkGo(1)" aria-label="Next item"${S.walkIndex>=flat.length-1?' disabled':''}><span class="walk-float-icon" aria-hidden="true">›</span><span class="walk-float-lbl">Next</span></button>
         </div>
@@ -3174,8 +3219,8 @@ function renderCount(){
       <div class="count-form-lock-card">
         <div class="count-form-lock-title" id="count-lock-title">New inventory count</div>
         <div class="count-form-lock-sub">This screen only appears until your <b>first</b> inventory is saved. After that, the count form stays open here automatically. When you start, you can step through items or use <b>Full list</b>.</div>
-        <button type="button" class="btn btn-primary" style="width:100%" onclick="startNewCountSession()">Start new count</button>
-        <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="goToCountHistory()">Previous counts</button>
+        <button type="button" class="btn btn-primary btn-block" onclick="startNewCountSession()">Start new count</button>
+        <button type="button" class="btn btn-secondary btn-block btn-stack" onclick="goToCountHistory()">Previous counts</button>
       </div>
     </div>`;
   }
@@ -3185,8 +3230,8 @@ function renderCount(){
       <div class="count-form-lock-card">
         <div class="count-form-lock-title" id="count-resume-title">A count is already in progress.</div>
         <div class="count-form-lock-sub">You have a saved draft with <b>${draftProgress.counted}/${draftProgress.total}</b> items counted. Continue where you left off or delete this draft and start over.</div>
-        <button type="button" class="btn btn-primary" style="width:100%" onclick="continueCountDraftSession()">Continue where I left off</button>
-        <button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px" onclick="confirmDeleteCountDraftAndRestart()">Delete and start over</button>
+        <button type="button" class="btn btn-primary btn-block" onclick="continueCountDraftSession()">Continue where I left off</button>
+        <button type="button" class="btn btn-secondary btn-block btn-stack" onclick="confirmDeleteCountDraftAndRestart()">Delete and start over</button>
       </div>
     </div>`;
   }
@@ -3198,7 +3243,7 @@ function renderHistory(){
   let h=`
   <div class="pg-hdr">
     <div><div class="pg-title">Count History</div><div class="pg-sub">${S.sessions.length} recorded session${S.sessions.length!==1?'s':''}</div></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+    <div class="u-flex u-gap-6 u-flex-wrap u-end">
       <button class="btn btn-secondary btn-sm" onclick="historyBack()">Back</button>
       <button class="btn btn-primary btn-sm" onclick="startNewCountSession()">+ New Count</button>
     </div>
@@ -3231,7 +3276,7 @@ function renderEditSession(sessionId){
   const draft = S.editDraft;
   const groups = getOrderedGroups(S.items);
   let h=`
-  <div class="banner banner-info" style="margin-bottom:8px">
+  <div class="banner banner-info u-mb-8">
     <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
     Editing: ${fmtDateTime(sess.counted_at)}
   </div>`;
@@ -3335,13 +3380,13 @@ function renderOrder(){
   const orderItems=pendingForLatest?rawRecommended:rawRecommended.filter(it=>!ex.has(it.id));
   const removedFromOrder=pendingForLatest?[]:rawRecommended.filter(it=>ex.has(it.id));
 
-  h+=`<div class="banner banner-info" style="margin-bottom:7px">Based on count from ${fmtDate(last.counted_at)}</div>`;
+  h+=`<div class="banner banner-info u-mb-7">Based on count from ${fmtDate(last.counted_at)}</div>`;
 
   if(pendingForLatest){
     const lines=Object.keys(pendingForLatest.items||{});
     const nLines=lines.length;
     const sumLogged=Object.values(pendingForLatest.items||{}).reduce((s,d)=>s+(parseFloat(d.recommended)||0),0);
-    h+=`<div class="banner banner-ok" style="margin-bottom:7px">
+    h+=`<div class="banner banner-ok u-mb-7">
       <div style="margin-bottom:8px;line-height:1.45">An order is <strong>already saved</strong> for this count (${fmtDateTime(pendingForLatest.ordered_at)}): <strong>${nLines}</strong> line items, <strong>${sumLogged}</strong> total recommended units. Open <strong>Receive</strong> when you are ready to confirm the truck.</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         <button type="button" class="btn btn-secondary btn-sm" onclick="setTab('receive')">Open Receive</button>
@@ -3350,7 +3395,7 @@ function renderOrder(){
     </div>`;
   }
   if(otherPending.length){
-    h+=`<div class="banner banner-warn" style="margin-bottom:7px">A pending order is still on file from an older count. Review or receive it on the Receive tab.</div>`;
+    h+=`<div class="banner banner-warn u-mb-7">A pending order is still on file from an older count. Review or receive it on the Receive tab.</div>`;
   }
 
   if(!rawRecommended.length && !pendingForLatest){
@@ -3517,7 +3562,7 @@ function drawBarcodes(){
     wrap.innerHTML='';
     if(mode==='barcode'){
       if(!BCTor){
-        wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${escapeHtml(code)}</span>`;
+        wrap.innerHTML=`<span class="mono u-mono-chip">${escapeHtml(code)}</span>`;
         continue;
       }
       try{
@@ -3538,12 +3583,12 @@ function drawBarcodes(){
         cap.textContent=code;
         wrap.appendChild(cap);
       }catch(e){
-        wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${escapeHtml(code)}</span>`;
+        wrap.innerHTML=`<span class="mono u-mono-chip">${escapeHtml(code)}</span>`;
       }
       continue;
     }
     if(!QCtor){
-      wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${escapeHtml(code)}</span>`;
+      wrap.innerHTML=`<span class="mono u-mono-chip">${escapeHtml(code)}</span>`;
       continue;
     }
     try{
@@ -3567,7 +3612,7 @@ function drawBarcodes(){
       cap.textContent=code;
       wrap.appendChild(cap);
     }catch(e){
-      wrap.innerHTML=`<span class="mono" style="font-size:12px;padding:4px 8px;background:#f3f4f6;border-radius:6px;display:inline-block">${escapeHtml(code)}</span>`;
+      wrap.innerHTML=`<span class="mono u-mono-chip">${escapeHtml(code)}</span>`;
     }
   }
 }
@@ -3608,7 +3653,7 @@ function renderReceive(){
   normalizeOrderReceiptData(order);
   const confirmFlags=getReceiveConfirmFlags(order);
   if(pending.length>1){
-    h+=`<div class="banner banner-warn" style="margin-bottom:7px">${pending.length} pending orders on file. This screen shows the <strong>most recent</strong> (${fmtDateTime(order.ordered_at)}). Delete it below if it was logged by mistake, then the next one will appear here.</div>`;
+    h+=`<div class="banner banner-warn u-mb-7">${pending.length} pending orders on file. This screen shows the <strong>most recent</strong> (${fmtDateTime(order.ordered_at)}). Delete it below if it was logged by mistake, then the next one will appear here.</div>`;
   }
   const ordEntries=Object.entries(order.items||{});
   const origLines=ordEntries.filter(([,d])=>!d||!d.extraLine);
@@ -3616,7 +3661,7 @@ function renderReceive(){
   const lineCount=ordEntries.length;
   h+=`<div class="banner banner-info">Order placed ${fmtDate(order.ordered_at)} · <strong>${lineCount}</strong> line${lineCount!==1?'s':''} on this receipt${extraLines.length?` (${extraLines.length} extra${extraLines.length!==1?'s':''})`:''}</div>`;
   h+=`<div class="card">`;
-  h+=`<div class="card-hdr-static"><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Item</span><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Received</span></div>`;
+  h+=`<div class="card-hdr-static"><span class="u-text-label">Item</span><span class="u-text-label">Received</span></div>`;
 
   origLines.forEach(([itemId,data])=>{
     const item = S.items.find(i=>i.id===itemId);
@@ -3642,8 +3687,8 @@ function renderReceive(){
   const addable=S.items.filter(it=>!existingIds.has(it.id));
   const extraOpts=addable.map(it=>`<option value="${escapeHtml(it.id)}">${escapeHtml(it.name)}</option>`).join('');
   h+=`<div class="card" style="margin-top:8px">
-    <div class="card-hdr-static"><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Extras (autoship / not on order)</span></div>
-    <div style="padding:8px 10px;font-size:11px;color:#6b7280;line-height:1.45">Add lines for product that arrived but was not on your saved order. They are stored on this receipt so <strong>usage</strong> can include what you actually put away.</div>`;
+    <div class="card-hdr-static"><span class="u-text-label">Extras (autoship / not on order)</span></div>
+    <div class="u-pane-pad u-note">Add lines for product that arrived but was not on your saved order. They are stored on this receipt so <strong>usage</strong> can include what you actually put away.</div>`;
   if(extraLines.length){
     extraLines.forEach(([itemId,data])=>{
       const item=S.items.find(i=>i.id===itemId);
@@ -3662,7 +3707,7 @@ function renderReceive(){
     });
   }
   if(addable.length){
-    h+=`<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px 10px;border-top:1px solid #f4f4f5">
+    h+=`<div class="u-flex u-flex-wrap u-gap-8 u-items-center u-pane-pad u-divider-top">
       <select id="recv-extra-item" class="finput" style="flex:1;min-width:160px;margin:0;font-size:12px" aria-label="Item to add as extra">
         <option value="">Choose item…</option>
         ${extraOpts}
@@ -3670,15 +3715,15 @@ function renderReceive(){
       <button type="button" class="btn btn-secondary btn-sm" onclick="receiveAddExtraLine('${order.id}')">Add to receipt</button>
     </div>`;
   }else if(!extraLines.length){
-    h+=`<div style="padding:8px 10px 10px;font-size:11px;color:#9ca3af;border-top:1px solid #f4f4f5">Every catalog item is already listed on this receipt.</div>`;
+    h+=`<div class="u-pane-pad u-note-quiet u-divider-top">Every catalog item is already listed on this receipt.</div>`;
   }else{
-    h+=`<div style="padding:8px 10px 10px;font-size:11px;color:#9ca3af;border-top:1px solid #f4f4f5">No more items to add from your catalog.</div>`;
+    h+=`<div class="u-pane-pad u-note-quiet u-divider-top">No more items to add from your catalog.</div>`;
   }
   h+='</div>';
 
   const notesVal=escapeHtml(order.order_notes||'');
   h+=`<div class="card" style="margin-top:8px">
-    <div class="card-hdr-static"><span style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.07em">Receipt notes</span></div>
+    <div class="card-hdr-static"><span class="u-text-label">Receipt notes</span></div>
     <div style="padding:8px 10px">
       <textarea id="recv-notes-input" class="finput recv-notes" placeholder="Optional note about shortages, substitutions, damages, etc.">${notesVal}</textarea>
     </div>
@@ -4027,7 +4072,7 @@ function renderSetup(){
       </select>
       <div style="font-size:11px;color:#6b7280;margin-top:5px;line-height:1.4">Applies only to this device/browser and only changes how item codes are shown in Order.</div>
     </div>
-    <button type="button" class="btn btn-secondary btn-sm" style="width:100%" onclick="toggleDeveloperInfo()" aria-expanded="${S.showDeveloperInfo?'true':'false'}">Developer Info</button>
+    <button type="button" class="btn btn-secondary btn-sm btn-block" onclick="toggleDeveloperInfo()" aria-expanded="${S.showDeveloperInfo?'true':'false'}">Developer Info</button>
     ${S.showDeveloperInfo?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid #f3f4f6">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:7px">Database Status</div>
       <div class="test-row"><span>Supabase connection</span><span class="test-status ${S.dbReady?'t-pass':'t-fail'}">${S.dbReady?'Connected':'Error'}</span></div>
@@ -4047,7 +4092,7 @@ function renderSetup(){
   const templateSource=seedTemplate&&seedTemplate.source?seedTemplate.source:'none';
   h+=`<div class="form-card" style="margin-bottom:7px">
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-bottom:6px">Import / Export item settings</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <div class="row-inline">
       <button class="btn btn-secondary btn-sm" onclick="exportItemSeedTemplate()">Export current store</button>
       <button class="btn btn-secondary btn-sm" onclick="importItemSeedTemplate()">Import to current store</button>
       <button class="btn btn-primary btn-sm" onclick="useCurrentStoreAsSeedTemplate()">Set as new-store seed</button>
