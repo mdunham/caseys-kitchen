@@ -741,6 +741,10 @@ const S = {
   /** Client-local order code rendering mode: qr | qr8 | barcode */
   barcodeMode: 'qr',
 };
+const INITIAL_PAR_SAVE_DEBOUNCE_MS = 180;
+let __initialParSaveTimer = null;
+let __initialParSaveInFlight = null;
+const __initialParQueuedIds = new Set();
 
 function attachStoreScope(row){
   const next={...row};
@@ -2370,36 +2374,92 @@ async function saveInitialParAndMove(delta){
   const itemIx=nextItems.findIndex(i=>i.id===item.id);
   if(itemIx<0) return;
   nextItems[itemIx]={...nextItems[itemIx],par:rounded};
+  S.items=normalizeItemsForOrderMath(nextItems);
+  ls.set('items',S.items);
+  queueInitialParSave(item.id);
+  if(delta<0&&idx>0){
+    S.initialSetupIndex=idx-1;
+    render();
+    queueInitialParFocus();
+    return;
+  }
+  if(delta>0&&idx<flat.length-1){
+    S.initialSetupIndex=idx+1;
+    render();
+    queueInitialParFocus();
+    return;
+  }
   try{
-    setSyncing(true,'Saving par levels…');
-    await db.upsertItems(nextItems);
-    S.items=normalizeItemsForOrderMath(nextItems);
-    ls.set('items',S.items);
-    if(delta<0&&idx>0){
-      S.initialSetupIndex=idx-1;
-      setSyncOk();
-      render();
-      queueInitialParFocus();
-      return;
+    await flushInitialParSaveQueue({waitForInFlight:true});
+  }catch{
+    return;
+  }
+  markInitialSetupComplete({item_count:flat.length,updated_count:flat.length});
+  S.initialSetupActive=false;
+  S.initialSetupIndex=0;
+  S.initialSetupParDraft={};
+  syncCountFormAvailability();
+  setSyncOk();
+  showBanner('Initial par setup saved. Start your first count.','ok');
+  render();
+}
+
+function queueInitialParSave(itemId){
+  const id=String(itemId||'').trim();
+  if(!id) return;
+  __initialParQueuedIds.add(id);
+  if(__initialParSaveTimer) clearTimeout(__initialParSaveTimer);
+  __initialParSaveTimer=setTimeout(()=>{
+    __initialParSaveTimer=null;
+    void flushInitialParSaveQueue();
+  },INITIAL_PAR_SAVE_DEBOUNCE_MS);
+}
+
+async function flushInitialParSaveQueue(opts={}){
+  const waitForInFlight=opts&&opts.waitForInFlight===true;
+  if(__initialParSaveTimer){
+    clearTimeout(__initialParSaveTimer);
+    __initialParSaveTimer=null;
+  }
+  if(__initialParSaveInFlight){
+    if(waitForInFlight){
+      await __initialParSaveInFlight;
+      if(__initialParQueuedIds.size) return flushInitialParSaveQueue(opts);
     }
-    if(delta>0&&idx<flat.length-1){
-      S.initialSetupIndex=idx+1;
-      setSyncOk();
+    return;
+  }
+  if(!__initialParQueuedIds.size) return;
+  const ids=[...__initialParQueuedIds];
+  __initialParQueuedIds.clear();
+  const idSet=new Set(ids);
+  const rows=S.items.filter(item=>idSet.has(item.id));
+  if(!rows.length) return;
+  const savePromise=(async()=>{
+    try{
+      await db.upsertItems(rows);
+      if(!S.syncing&&!S.progressOnly&&S.syncError){
+        setSyncOk();
+        render();
+      }
+    }catch(e){
+      ids.forEach(id=>__initialParQueuedIds.add(id));
+      setSyncErr(e&&e.message?e.message:'Unable to save par levels.');
       render();
-      queueInitialParFocus();
-      return;
+      throw e;
+    }finally{
+      __initialParSaveInFlight=null;
+      if(__initialParQueuedIds.size&&!waitForInFlight){
+        __initialParSaveTimer=setTimeout(()=>{
+          __initialParSaveTimer=null;
+          void flushInitialParSaveQueue();
+        },INITIAL_PAR_SAVE_DEBOUNCE_MS);
+      }
     }
-    markInitialSetupComplete({item_count:flat.length,updated_count:flat.length});
-    S.initialSetupActive=false;
-    S.initialSetupIndex=0;
-    S.initialSetupParDraft={};
-    syncCountFormAvailability();
-    setSyncOk();
-    showBanner('Initial par setup saved. Start your first count.','ok');
-    render();
-  }catch(e){
-    setSyncErr(e.message);
-    render();
+  })();
+  __initialParSaveInFlight=savePromise;
+  if(waitForInFlight){
+    await savePromise;
+    if(__initialParQueuedIds.size) await flushInitialParSaveQueue(opts);
   }
 }
 
@@ -3634,8 +3694,16 @@ function applyRouteFromHash(){
     if(S.tab==='order') S.orderView=sub==='walk'?'walk':'list';
     else S.orderView='list';
     if(S.tab!=='count') S.historyMode=false;
+    if(S.initialSetupActive){
+      // New stores must stay on the par walkthrough until setup is finished.
+      S.tab='count';
+      S.historyMode=false;
+      S.countView='walk';
+    }
     const want=CK.buildRouteHash(S.tab,{countView:S.countView,orderView:S.orderView,historyMode:S.historyMode});
-    if(!location.hash||location.hash==='#'){
+    if(S.initialSetupActive&&location.hash!==want){
+      history.replaceState(null,'',location.pathname+location.search+want);
+    }else if(!location.hash||location.hash==='#'){
       history.replaceState(null,'',location.pathname+location.search+want);
     }
     __ckUrlBoot=false;
