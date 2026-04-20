@@ -272,6 +272,11 @@ end $$;
 alter table ck_counts add column if not exists updated_at timestamptz default now();
 update ck_counts set updated_at = coalesce(updated_at, created_at) where updated_at is null;
 
+-- Migration: draft/final state for count sessions (safe to re-run)
+alter table ck_sessions add column if not exists status text not null default 'final';
+update ck_sessions set status='final' where status is null or trim(status)='';
+create index if not exists ck_sessions_status_idx on ck_sessions(status);
+
 -- Migration: item-order math fields for case packs + reorder trigger (safe to re-run)
 alter table ck_items add column if not exists order_unit text default '';
 alter table ck_items add column if not exists order_pack_qty numeric default 1;
