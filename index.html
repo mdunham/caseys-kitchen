@@ -293,6 +293,17 @@ button.logo:focus-visible{outline:2px solid var(--ck-red);outline-offset:2px;bor
 @keyframes spin{to{transform:rotate(360deg)}}
 /* Count form lock (popover-style) */
 .count-form-shell{position:relative;min-height:min(420px,72vh)}
+.count-toolbar{position:sticky;top:0;z-index:12;background:#fff;border:1px solid var(--ck-line);border-radius:10px;padding:8px 9px;margin-bottom:8px;box-shadow:0 2px 8px rgba(17,17,17,.04)}
+.count-toolbar-grid{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center}
+.count-toolbar-input{width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--ck-line);background:#f9fafb;font-size:12px;font-family:inherit;outline:none}
+.count-toolbar-input:focus{border-color:var(--ck-red);background:#fff}
+.count-toolbar-select{padding:7px 8px;border-radius:8px;border:1px solid var(--ck-line);background:#fff;font-size:12px;font-family:inherit;color:#111}
+.count-toolbar-stats{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:7px}
+.count-toolbar-stats-left{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.count-toolbar-advanced{margin-top:7px;padding-top:7px;border-top:1px solid #f3f4f6}
+.count-toolbar-adv-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.count-toolbar-note{font-size:10px;color:#9ca3af;line-height:1.35}
+.count-empty{padding:14px 10px;background:#fff;border:1px dashed #d1d5db;border-radius:9px;color:#6b7280;font-size:12px;text-align:center}
 .count-form-lock{position:absolute;inset:0;z-index:25;display:flex;align-items:center;justify-content:center;padding:16px 12px;background:rgba(246,246,247,.82);backdrop-filter:blur(6px);border-radius:12px;border:1px solid var(--ck-line)}
 .count-form-lock-card{background:#fff;border-radius:12px;padding:18px 16px;max-width:300px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.1);border:1px solid var(--ck-line)}
 .count-form-lock-title{font-size:16px;font-weight:700;color:#111;margin-bottom:6px}
@@ -729,6 +740,9 @@ const S = {
   testResults: null,
   countView: 'list',
   walkIndex: 0,
+  countSearchQuery: '',
+  countFilterMode: 'all',
+  countAdvancedOpen: false,
   orderView: 'list',
   /** Full list: when true, rows marked scanned are hidden from the list (default on) */
   orderListHideScanned: true,
@@ -1019,7 +1033,7 @@ function continueCountDraftSession(){
   S.historyMode=false;
   S.countFormActive=true;
   S.countDraftPrompt=false;
-  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  const flat=walkFlat();
   if(flat.length){
     S.countView='walk';
     S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
@@ -2602,7 +2616,7 @@ function setCountView(mode){
   }
   S.countView=mode;
   if(mode==='walk'){
-    const flat=flattenWalkItems(getOrderedGroups(S.items));
+    const flat=walkFlat();
     if(!flat.length){ S.countView='list'; render(); return; }
     S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
     queueCountDraftSave();
@@ -2619,7 +2633,7 @@ function enterWalkCount(clearDraft){
     S.countManualOrderOpen=false;
     setCountDraftSessionState(null,{clearDraft:true});
   }
-  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  const flat=walkFlat();
   if(!flat.length){ alert('No items to count.'); return; }
   S.countView='walk';
   S.walkIndex=Math.max(0,Math.min(S.walkIndex,flat.length-1));
@@ -2644,7 +2658,7 @@ function startNewCountSession(opts={}){
   S.historyMode=false;
   S.editSessionId=null;
   S.editDraft={};
-  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  const flat=walkFlat();
   if(!flat.length){ alert('No items to count.'); return; }
   S.countFormActive=true;
   S.countDraftPrompt=false;
@@ -2660,7 +2674,10 @@ function queueWalkFocus(){
   });
 }
 
-function walkFlat(){ return flattenWalkItems(getOrderedGroups(S.items)); }
+function walkFlat(){
+  const filtered=filterCountItems(S.items,S.draft,S.countSearchQuery,S.countFilterMode);
+  return flattenWalkItems(getOrderedGroups(filtered));
+}
 
 function walkGo(delta){
   const f=walkFlat();
@@ -2993,7 +3010,7 @@ function renderInitialParSetup(){
 function countListQtyKeydown(ev, itemId){
   if(S.countView!=='list'||!S.countFormActive) return;
   if(ev.key!=='Tab') return;
-  const flat=flattenWalkItems(getOrderedGroups(S.items));
+  const flat=walkFlat();
   const idx=flat.findIndex(i=>i.id===itemId);
   if(idx<0) return;
   const delta=ev.shiftKey?-1:1;
@@ -3017,32 +3034,92 @@ function countListQtyKeydown(ev, itemId){
   }
 }
 
+function filterCountItems(items,draft,searchQuery,filterMode){
+  const q=String(searchQuery||'').trim().toLowerCase();
+  const mode=String(filterMode||'all');
+  return (items||[]).filter(item=>{
+    const raw=draft&&draft[item.id]!==undefined?String(draft[item.id]).trim():'';
+    const hasCount=raw!=='';
+    if(mode==='counted'&&!hasCount) return false;
+    if(mode==='remaining'&&hasCount) return false;
+    if(q){
+      const hay=[item.name,item.cat_l1,item.cat_l2,item.unit,item.order_code,item.scan_code].filter(Boolean).join(' ').toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function setCountSearchQuery(v){
+  S.countSearchQuery=String(v||'');
+  if(S.countView==='walk') S.walkIndex=0;
+  render();
+}
+
+function setCountFilterMode(v){
+  const mode=v==='counted'||v==='remaining'?v:'all';
+  S.countFilterMode=mode;
+  if(S.countView==='walk') S.walkIndex=0;
+  render();
+}
+
+function toggleCountAdvanced(){
+  S.countAdvancedOpen=!S.countAdvancedOpen;
+  render();
+}
+
 function renderCount(){
   const draft=S.draft, items=S.items;
   const counted=items.filter(i=>draft[i.id]!==undefined&&draft[i.id]!=='').length;
   const pct=items.length?Math.round(counted/items.length*100):0;
-  const groups=getOrderedGroups(items);
+  const filteredItems=filterCountItems(items,draft,S.countSearchQuery,S.countFilterMode);
+  const groups=getOrderedGroups(filteredItems);
   const lastSess = S.sessions[0];
   const formLocked=!S.countFormActive;
   const showResumePrompt=!!(S.countDraftPrompt&&hasActiveCountDraft());
+  const filterLabel=S.countFilterMode==='counted'?'Counted only':(S.countFilterMode==='remaining'?'Remaining only':'All items');
   let h=`
   <div class="pg-hdr">
     <div><div class="pg-title">Inventory Count</div><div class="pg-sub">${lastSess?'Last: '+fmtDate(lastSess.counted_at):'No previous counts'}</div></div>
     <div style="display:flex;gap:6px;align-items:center">
-      <span class="badge">${counted}/${items.length}</span>
-      ${!formLocked?`<button type="button" class="count-cog-btn${S.countManualOrderOpen?' on':''}" onclick="toggleCountManualOrder()" aria-label="Manual truck order extras" aria-pressed="${S.countManualOrderOpen?'true':'false'}" title="Show or hide manual add to recommended order">
-        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      </button>`:''}
+      <span class="badge">${counted}/${items.length}</span>      
       <button class="btn btn-secondary btn-sm" onclick="toggleHistory()">History</button>
     </div>
   </div>
   <div class="count-form-shell${formLocked?' is-locked':''}" id="count-form-shell">
   <div class="count-form-pane"${formLocked?' inert':''}>
-  <div class="seg-row">
-    <button type="button" class="seg${S.countView==='list'?' on':''}" onclick="setCountView('list')">Full list</button>
-    <button type="button" class="seg${S.countView==='walk'?' on':''}" onclick="enterWalkCount(false)">Walk-through</button>
-  </div>
-  <div class="prog"><div class="prog-fill${pct===100?' done':''}" id="prog-fill" style="width:${pct}%"></div></div>`;
+  <div class="count-toolbar">
+    <div class="count-toolbar-grid">
+      <input class="count-toolbar-input" type="search" value="${escapeHtml(S.countSearchQuery)}" placeholder="Search items, categories, or codes" oninput="setCountSearchQuery(this.value)">
+      <select class="count-toolbar-select" onchange="setCountFilterMode(this.value)">
+        <option value="all"${S.countFilterMode==='all'?' selected':''}>All</option>
+        <option value="remaining"${S.countFilterMode==='remaining'?' selected':''}>Remaining</option>
+        <option value="counted"${S.countFilterMode==='counted'?' selected':''}>Counted</option>
+      </select>
+      <button type="button" id="count-save-btn" class="btn btn-primary btn-sm" onclick="completeInventory()" ${counted===0?'disabled':''}>Save</button>
+    </div>
+    <div class="prog" style="margin:7px 0 0"><div class="prog-fill${pct===100?' done':''}" id="prog-fill" style="width:${pct}%"></div></div>
+    <div class="count-toolbar-stats">
+      <div class="count-toolbar-stats-left">
+        <span class="badge">${counted}/${items.length}</span>
+        <span class="badge info">${filteredItems.length} shown</span>
+        <span class="item-meta">${escapeHtml(filterLabel)}</span>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="toggleCountAdvanced()">${S.countAdvancedOpen?'Hide':'Show'} advanced</button>
+    </div>
+    ${S.countAdvancedOpen?`<div class="count-toolbar-advanced">
+      <div class="count-toolbar-adv-row">
+        <div class="seg-row" style="margin-bottom:0;flex:1;min-width:220px">
+          <button type="button" class="seg${S.countView==='list'?' on':''}" onclick="setCountView('list')">Full list</button>
+          <button type="button" class="seg${S.countView==='walk'?' on':''}" onclick="enterWalkCount(false)">Walk-through</button>
+        </div>
+        <button type="button" class="count-cog-btn${S.countManualOrderOpen?' on':''}" onclick="toggleCountManualOrder()" aria-label="Manual truck order extras" aria-pressed="${S.countManualOrderOpen?'true':'false'}" title="Show or hide manual add to recommended order">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+      </div>
+      <div class="count-toolbar-note">Walk mode and manual truck-order extras stay available under advanced controls.</div>
+    </div>`:''}
+  </div>`;
 
   if(S.syncError) h+=`<div class="banner banner-err" style="margin-bottom:7px">⚠ ${S.syncError} — data saved locally.</div>`;
 
@@ -3097,6 +3174,9 @@ function renderCount(){
       </div>`;
     }
   }else{
+    if(!filteredItems.length){
+      h+=`<div class="count-empty">No items match this search/filter.</div>`;
+    }
     groups.forEach(g=>{
       const l1=g.l1;
       const k1=EK1(l1);
@@ -3161,10 +3241,6 @@ function renderCount(){
   h+=`<div class="sticky-footer">
     <div class="sticky-footer-row between">
       <span style="font-size:12px;color:#9ca3af">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'})}</span>
-      <button class="btn btn-primary" onclick="completeInventory()" ${counted===0?'disabled':''}>
-        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-        Save Count
-      </button>
     </div>
     ${stickyFooterCopyright()}
   </div>
@@ -4251,7 +4327,7 @@ function setDraft(id,val){
   if(pf){pf.style.width=pct+'%';pf.className='prog-fill'+(pct===100?' done':'');}
   const badge=document.querySelector('.pg-hdr .badge');
   if(badge) badge.textContent=counted+'/'+items.length;
-  const sb2=document.querySelector('.sticky-footer .btn-primary');
+  const sb2=document.getElementById('count-save-btn');
   if(sb2) sb2.disabled=counted===0;
 }
 
